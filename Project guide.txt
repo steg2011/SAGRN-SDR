@@ -1,0 +1,62 @@
+speed is king this needs to be as fast as possible
+
+we are creating an application that uses a sdr to monitor for emergency messages on the SAGRN these will then be displayed on a web page, used for alerts to subscribers via telegram bots, and used for mobile applications.
+
+==============================
+BACKEND
+==============================
+receive pager entries from raspberry pi collectors, multiple collectors will be sending the same information to ensure info is accurat we will start with 1 collector but the ability to add more may be required at a latter date. 
+
+server will be a self hosted Linux Debian machine
+testing will be done on this windows machine 
+
+project will use GitHub repo https://github.com/steg2011/SAGRN-SDR.git
+
+create a script to install and setup what you need on the pi
+it is currently recording to a log file.
+
+the pi is called pager1 at ip address 192.168.1.23 username tmcit password D@RK51de
+
+using historical logs from the pi
+create a cap code database or lookup table
+
+create a saas job type database or lookup table
+
+create a saas crew abbreviation database or lookup table
+
+
+use log data to identify message string order, key words such as respond etc..
+
+
+sort the pager messages into categories agency ie saas cfs mfs ses MedStar tmc etc.. incident type, Minor clean up, fire, etc.. these should be fields of the database if required 
+
+
+location use geocoding to extract the lat long location.
+use nominatim openst maps  
+identify what is a saas job and dont try to geocode these jobs as they do not contain addresses
+process new jobs first as soon as they are received in the background at 1 job per second process old locations until the system has caught up. remember speed is king 
+using fuzzy logic and south Australian street names database to assist the geocoder
+only ever try to geocode an address once then mark as no location
+use the job id filtering to only geocode once per job. 
+
+
+
+Use the incident number including agency plus the date to create a unique incident identifier multiple crews may be sent to the same incident this should be tracked. incident numbers are refreshed every day by each agency.
+
+only 30 days of messages need to be stored could be less key is speed. 
+
+use the cfs incident tracker for final location information and job status ie closed 
+https://data.eso.sa.gov.au/prod/cfs/criimson/cfs_current_incidents.xml
+https://data.eso.sa.gov.au/prod/cfs/criimson/cfs_cap_incidents.xml
+
+===============================
+FRONTEND
+===============================
+clone look and feel of https://sapaging.com/live?agency=ALL
+different colours for each agency (pastels)
+simple initial interface with a list of jobs, with the ability to click on a message and get more information such as a link to the location on google. what extra vehicles have been assigned to the job.
+
+1 first step is to create the link between the collector and the database and prove that is working this needs to be as fast and reliable as possible
+2 using fuzzy logic and south Australian street names database create the geocoder lookup. 
+3 create an administrator page for the backend 
+4 create the public webpage based on https://sapaging.com/live?agency=ALL design keep the information simple and easy to read with location and job type the key information

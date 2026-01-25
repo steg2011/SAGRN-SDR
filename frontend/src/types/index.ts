@@ -1,0 +1,38 @@
+export interface Unit {
+  callsign: string;
+  status: string;
+  dispatched_at: string | null;
+}
+
+export interface Incident {
+  id: number;
+  unique_id: string;
+  incident_number: string;
+  incident_date: string;
+  incident_type: string | null;
+  alarm_level: number | null;
+  status: string;
+  address: string | null;
+  suburb: string | null;
+  map_reference: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  agency_code: string | null;
+  agency_name: string | null;
+  agency_color: string | null;
+  units: Unit[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Agency {
+  code: string;
+  name: string;
+  color: string;
+}
+
+export interface Stats {
+  total_incidents_24h: number;
+  active_incidents: number;
+  by_agency: Record<string, number>;
+}
