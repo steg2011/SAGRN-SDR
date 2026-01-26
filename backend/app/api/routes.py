@@ -11,11 +11,13 @@ from app.models.database import get_db
 from app.models.models import Message, Incident, Agency, IncidentUnit
 from app.services.parser import MessageParser, ParsedMessage
 from app.services.incident_service import IncidentService
+from app.services.message_combiner import get_message_combiner
 
 
 router = APIRouter()
 parser = MessageParser()
 incident_service = IncidentService()
+message_combiner = get_message_combiner()
 
 
 # Request/Response Models
@@ -106,9 +108,20 @@ async def receive_message(
     """
     Receive a single pager message from collector.
     This is the primary endpoint for Raspberry Pi collectors.
+    Multi-part messages are automatically combined before parsing.
     """
     try:
-        parsed = parser.parse(input.message)
+        # Process through message combiner to handle multi-part messages
+        processed_message, was_combined = message_combiner.process(input.message)
+
+        # If this was Part 1, it's been buffered - wait for Part 2
+        if processed_message is None:
+            return {
+                "status": "buffered",
+                "reason": "Part 1 of multi-part message buffered, awaiting Part 2"
+            }
+
+        parsed = parser.parse(processed_message)
         if not parsed:
             return {"status": "skipped", "reason": "unparseable or ignored message"}
 
@@ -118,7 +131,8 @@ async def receive_message(
             "status": "success",
             "message_id": message.id if message else None,
             "agency": parsed.agency,
-            "type": parsed.message_type
+            "type": parsed.message_type,
+            "combined": was_combined
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -132,11 +146,42 @@ async def receive_batch(
     """
     Receive a batch of messages from collector.
     For initial sync or catch-up scenarios.
+    Multi-part messages are automatically combined before parsing.
     """
     processed = 0
     skipped = 0
+    buffered = 0
+    combined = 0
+
+    # Use a local combiner for batch processing to ensure proper ordering
+    from app.services.message_combiner import MessageCombiner
+    batch_combiner = MessageCombiner()
 
     for msg in input.messages:
+        try:
+            # Process through combiner for multi-part handling
+            processed_message, was_combined = batch_combiner.process(msg)
+
+            if processed_message is None:
+                # Part 1 buffered, waiting for Part 2
+                buffered += 1
+                continue
+
+            if was_combined:
+                combined += 1
+
+            parsed = parser.parse(processed_message)
+            if parsed:
+                await incident_service.process_message(db, parsed)
+                processed += 1
+            else:
+                skipped += 1
+        except Exception:
+            skipped += 1
+
+    # Process any remaining buffered Part 1 messages that didn't get a Part 2
+    remaining = batch_combiner.flush_pending()
+    for msg in remaining:
         try:
             parsed = parser.parse(msg)
             if parsed:
@@ -150,7 +195,8 @@ async def receive_batch(
     return {
         "status": "success",
         "processed": processed,
-        "skipped": skipped
+        "skipped": skipped,
+        "combined": combined
     }
 
 

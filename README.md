@@ -98,12 +98,12 @@ Update `SAGRN_SERVER_URL` to your server's IP address.
 
 | Agency | Description | Color |
 |--------|-------------|-------|
-| SAAS | SA Ambulance Service | Light Blue |
-| CFS | Country Fire Service | Light Orange |
+| SAAS | SA Ambulance Service | Light Green |
+| CFS | Country Fire Service | Light Yellow |
 | MFS | Metropolitan Fire Service | Light Red |
-| SES | State Emergency Service | Light Yellow |
+| SES | State Emergency Service | Light Orange |
 | MedStar | MedSTAR | Light Purple |
-| TMC | Transport Management Centre | Light Green |
+| TMC | Transport Management Centre | Light Blue |
 
 ## Configuration
 
