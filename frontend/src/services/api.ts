@@ -47,3 +47,38 @@ export async function getStats(): Promise<Stats> {
 export async function getRawMessages(limit: number = 100): Promise<RawMessage[]> {
   return fetchJson<RawMessage[]>(`${API_BASE}/messages/raw?limit=${limit}`);
 }
+
+// Server-Sent Events
+export interface SSECallbacks {
+  onConnected?: () => void;
+  onNewMessage?: (data: { message_id: number; incident_id: number | null; agency: string; type: string }) => void;
+  onBatchProcessed?: (data: { processed: number; skipped: number; combined: number }) => void;
+  onError?: (error: Event) => void;
+}
+
+export function subscribeToEvents(callbacks: SSECallbacks): () => void {
+  const eventSource = new EventSource(`${API_BASE}/events`);
+
+  eventSource.addEventListener('connected', () => {
+    callbacks.onConnected?.();
+  });
+
+  eventSource.addEventListener('new_message', (event) => {
+    const data = JSON.parse(event.data);
+    callbacks.onNewMessage?.(data);
+  });
+
+  eventSource.addEventListener('batch_processed', (event) => {
+    const data = JSON.parse(event.data);
+    callbacks.onBatchProcessed?.(data);
+  });
+
+  eventSource.onerror = (error) => {
+    callbacks.onError?.(error);
+  };
+
+  // Return cleanup function
+  return () => {
+    eventSource.close();
+  };
+}

@@ -128,6 +128,77 @@ class SuburbMatcher:
         result = self.match(text)
         return result[1] if result else 0
 
+    def extract_suburb_from_text(self, text: str) -> Optional[str]:
+        """
+        Extract a suburb name from text by scanning for known SA suburbs.
+        Handles text with prefixes, codes, and other noise.
+
+        This method looks for suburb names (including multi-word suburbs)
+        within the text and returns the best match.
+
+        Args:
+            text: The text to search for suburbs (e.g., ": H715 SALISBURY EAST 71 M 9")
+
+        Returns:
+            The matched suburb name, or None if no match found
+        """
+        if not text or not text.strip():
+            return None
+
+        text = text.upper().strip()
+
+        # Build list of potential suburb candidates by looking for
+        # consecutive uppercase word sequences
+        words = text.split()
+
+        # Try progressively smaller word combinations (longest first)
+        # to catch multi-word suburbs like "PORT AUGUSTA" or "SALISBURY EAST"
+        best_match = None
+        best_score = 0
+
+        for window_size in range(min(4, len(words)), 0, -1):
+            for i in range(len(words) - window_size + 1):
+                candidate_words = words[i:i + window_size]
+
+                # Skip if any word looks like a code/number pattern
+                # but allow words that are part of suburb names
+                skip = False
+                for word in candidate_words:
+                    # Skip pure numbers, alphanumeric codes, or special prefixes
+                    if (word.isdigit() or
+                        word.startswith('@') or
+                        word.startswith('?') or
+                        word == 'CB' or
+                        word == 'PR:' or
+                        word == 'Disp:' or
+                        (len(word) <= 4 and any(c.isdigit() for c in word) and word not in self.suburbs)):
+                        skip = True
+                        break
+                if skip:
+                    continue
+
+                candidate = ' '.join(candidate_words)
+
+                # Check for exact match first
+                if candidate in self.suburbs:
+                    return candidate
+
+                # Check aliases
+                if candidate in self.aliases:
+                    return self.aliases[candidate]
+
+                # Try fuzzy match
+                result = self.match(candidate)
+                if result:
+                    matched_suburb, score = result
+                    # Prefer longer matches and higher scores
+                    adjusted_score = score + (window_size * 5)
+                    if adjusted_score > best_score:
+                        best_score = adjusted_score
+                        best_match = matched_suburb
+
+        return best_match
+
 
 # Singleton instance for use across the application
 _suburb_matcher: Optional[SuburbMatcher] = None

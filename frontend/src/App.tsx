@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Incident, Agency, Stats, RawMessage } from './types';
-import { getIncidents, getAgencies, getStats, getRawMessages } from './services/api';
+import { getIncidents, getAgencies, getStats, getRawMessages, subscribeToEvents } from './services/api';
 import { IncidentCard } from './components/IncidentCard';
 import { IncidentDetail } from './components/IncidentDetail';
 import { AgencyFilter } from './components/AgencyFilter';
 import { RawMessageCard } from './components/RawMessageCard';
 import './App.css';
 
-const REFRESH_INTERVAL = 10000; // 10 seconds
+const FALLBACK_REFRESH_INTERVAL = 30000; // 30 seconds fallback polling (SSE is primary)
 const NEW_INCIDENT_DURATION = 30000; // How long to show "new" highlight (30 seconds)
 
 function App() {
@@ -128,16 +128,44 @@ function App() {
     }
   }, []);
 
+  // Initial data fetch
   useEffect(() => {
     if (rawMode) {
       fetchRawData();
-      const interval = setInterval(fetchRawData, REFRESH_INTERVAL);
-      return () => clearInterval(interval);
     } else {
       fetchData();
-      const interval = setInterval(fetchData, REFRESH_INTERVAL);
-      return () => clearInterval(interval);
     }
+  }, [fetchData, fetchRawData, rawMode]);
+
+  // SSE subscription for real-time updates
+  useEffect(() => {
+    const fetchCurrent = rawMode ? fetchRawData : fetchData;
+
+    // Subscribe to SSE events
+    const unsubscribe = subscribeToEvents({
+      onConnected: () => {
+        console.log('SSE connected');
+      },
+      onNewMessage: () => {
+        // Refetch data when new message arrives
+        fetchCurrent();
+      },
+      onBatchProcessed: () => {
+        // Refetch data when batch is processed
+        fetchCurrent();
+      },
+      onError: (error) => {
+        console.error('SSE error:', error);
+      },
+    });
+
+    // Fallback polling in case SSE has issues
+    const fallbackInterval = setInterval(fetchCurrent, FALLBACK_REFRESH_INTERVAL);
+
+    return () => {
+      unsubscribe();
+      clearInterval(fallbackInterval);
+    };
   }, [fetchData, fetchRawData, rawMode]);
 
   const handleAgencyToggle = (agencyCode: string) => {

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -12,6 +12,7 @@ from app.models.models import Message, Incident, Agency, IncidentUnit
 from app.services.parser import MessageParser, ParsedMessage
 from app.services.incident_service import IncidentService
 from app.services.message_combiner import get_message_combiner
+from app.services.event_manager import get_event_manager
 
 
 router = APIRouter()
@@ -127,6 +128,16 @@ async def receive_message(
 
         message = await incident_service.process_message(db, parsed)
 
+        # Broadcast SSE event for new message
+        event_manager = get_event_manager()
+        await event_manager.broadcast("new_message", {
+            "message_id": message.id if message else None,
+            "incident_id": message.incident_id if message else None,
+            "agency": parsed.agency,
+            "type": parsed.message_type,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+
         return {
             "status": "success",
             "message_id": message.id if message else None,
@@ -191,6 +202,16 @@ async def receive_batch(
                 skipped += 1
         except Exception:
             skipped += 1
+
+    # Broadcast SSE event for batch completion
+    if processed > 0:
+        event_manager = get_event_manager()
+        await event_manager.broadcast("batch_processed", {
+            "processed": processed,
+            "skipped": skipped,
+            "combined": combined,
+            "timestamp": datetime.utcnow().isoformat()
+        })
 
     return {
         "status": "success",
@@ -417,3 +438,23 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+
+# Server-Sent Events endpoint
+@router.get("/events")
+async def event_stream():
+    """
+    Server-Sent Events endpoint for real-time updates.
+    Clients connect here to receive push notifications for new incidents and messages.
+    """
+    event_manager = get_event_manager()
+
+    return StreamingResponse(
+        event_manager.subscribe(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        }
+    )

@@ -435,39 +435,41 @@ class MessageParser:
             # Search for truncated patterns and map to full names
             parsed.incident_type = self._extract_saas_incident_type(remainder)
 
-            # Extract suburb - the text before the map reference
-            # SAAS format: "SUBURB MAP_REF JOB_ID Disp: TIME INCIDENT_TYPE"
-            # Suburbs can be multi-word like "PORT AUGUSTA" or "WOODVILLE NORTH"
-            # Map reference can have optional book prefix like "PUG 2 H 15" or just "104 N 1"
-            if parsed.map_reference:
-                before_map = remainder.split(parsed.map_reference)[0].strip()
-                # Remove facility prefix if present
-                if before_map.startswith('@'):
-                    facility_end = before_map.find(' ')
-                    if facility_end > 0:
-                        before_map = before_map[facility_end:].strip()
+            # Extract suburb using the suburb lookup table
+            # SAAS format varies:
+            #   - Simple: "SUBURB MAP_REF JOB_ID Disp: TIME INCIDENT_TYPE"
+            #   - With codes: ": H715 SUBURB MAP_REF JOB_ID Disp: TIME"
+            #   - With facility: ": @FACILITY_NAME SUBURB MAP_REF JOB_ID"
+            # Use the suburb matcher to scan for known suburb names
 
-                # The suburb is all the uppercase text before the map reference
-                # Clean up any trailing/leading whitespace and replace underscores
-                suburb_text = before_map.strip()
-                if suburb_text and re.match(r'^[A-Z][A-Z_\s]+$', suburb_text):
-                    suburb_text = suburb_text.replace('_', ' ')
-                    # Normalize suburb using fuzzy matching
-                    parsed.suburb = self.suburb_matcher.normalize(suburb_text)
+            # Determine the text to search for suburb
+            if parsed.map_reference:
+                # Search in text before the map reference
+                search_text = remainder.split(parsed.map_reference)[0].strip()
             else:
-                # Try to extract suburb from the start of remainder if no map ref
-                # Look for consecutive uppercase words at the start
-                parts = remainder.split()
-                suburb_parts = []
-                for part in parts:
-                    if re.match(r'^[A-Z][A-Z_]+$', part) and not part.startswith('@'):
-                        suburb_parts.append(part.replace('_', ' '))
-                    else:
-                        break
-                if suburb_parts:
-                    suburb_text = ' '.join(suburb_parts)
-                    # Normalize suburb using fuzzy matching
-                    parsed.suburb = self.suburb_matcher.normalize(suburb_text)
+                # Search in text before the job ID or dispatch time
+                search_text = remainder
+                if parsed.job_id:
+                    search_text = remainder.split(parsed.job_id)[0].strip()
+                elif 'Disp:' in remainder:
+                    search_text = remainder.split('Disp:')[0].strip()
+
+            # Clean up the search text
+            # Remove leading colon and whitespace (common in messages with codes)
+            search_text = search_text.lstrip(': ')
+            # Replace underscores with spaces
+            search_text = search_text.replace('_', ' ')
+
+            # For facility messages, try to extract suburb from after facility name
+            if '@' in search_text:
+                # Find the facility name (between @ and the next known suburb or map ref)
+                facility_start = search_text.find('@')
+                facility_text = search_text[facility_start:]
+                # Suburb is usually at the end of facility text, search for it
+                parsed.suburb = self.suburb_matcher.extract_suburb_from_text(facility_text)
+            else:
+                # Non-facility message - scan for known suburb names
+                parsed.suburb = self.suburb_matcher.extract_suburb_from_text(search_text)
 
             return parsed
 
