@@ -13,12 +13,12 @@ class IncidentService:
 
     # Agency codes and colors (pastel)
     AGENCY_CONFIG = {
-        'SAAS': {'name': 'SA Ambulance Service', 'color': '#B3E5FC'},  # Light blue
+        'SAAS': {'name': 'SA Ambulance Service', 'color': '#C8E6C9'},  # Light green
         'CFS': {'name': 'Country Fire Service', 'color': '#FFCCBC'},   # Light orange
         'MFS': {'name': 'Metropolitan Fire Service', 'color': '#FFCDD2'},  # Light red
         'SES': {'name': 'State Emergency Service', 'color': '#FFF9C4'},  # Light yellow
         'MedStar': {'name': 'MedSTAR', 'color': '#E1BEE7'},  # Light purple
-        'TMC': {'name': 'Transport Management Centre', 'color': '#C8E6C9'},  # Light green
+        'TMC': {'name': 'Transport Management Centre', 'color': '#B3E5FC'},  # Light blue
         'UNKNOWN': {'name': 'Unknown', 'color': '#E0E0E0'},  # Light gray
     }
 
@@ -253,6 +253,7 @@ class IncidentService:
             select(Incident)
             .options(selectinload(Incident.agency))
             .options(selectinload(Incident.units))
+            .options(selectinload(Incident.messages))
             .where(Incident.created_at >= cutoff)
             .order_by(Incident.created_at.desc())
             .limit(limit)

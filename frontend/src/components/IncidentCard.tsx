@@ -3,6 +3,7 @@ import { Incident } from '../types';
 
 interface IncidentCardProps {
   incident: Incident;
+  isNew?: boolean;
   onClick: () => void;
 }
 
@@ -46,12 +47,12 @@ function formatAdelaideDateTime(dateString: string): string {
   });
 }
 
-export const IncidentCard: React.FC<IncidentCardProps> = ({ incident, onClick }) => {
+export const IncidentCard: React.FC<IncidentCardProps> = ({ incident, isNew, onClick }) => {
   const bgColor = incident.agency_color || '#E0E0E0';
 
   return (
     <div
-      className="incident-card"
+      className={`incident-card ${isNew ? 'incident-new' : ''}`}
       style={{ backgroundColor: bgColor }}
       onClick={onClick}
     >

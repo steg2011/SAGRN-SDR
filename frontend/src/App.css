@@ -88,12 +88,17 @@ body {
 }
 
 .agency-btn:hover {
-  background: #333;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .agency-btn.active {
-  background: #444;
-  border-color: #666;
+  background: transparent;
+}
+
+.agency-btn.inactive {
+  background: transparent;
+  border-color: #555;
+  color: #888;
 }
 
 /* Incident List */
@@ -123,6 +128,26 @@ body {
 .incident-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* New incident highlight animation */
+.incident-card.incident-new {
+  animation: newIncidentPulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+}
+
+@keyframes newIncidentPulse {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.4),
+                0 0 20px rgba(255, 255, 255, 0.2);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.8),
+                0 0 40px rgba(255, 255, 255, 0.4),
+                0 0 60px rgba(255, 255, 255, 0.2);
+    transform: scale(1.02);
+  }
 }
 
 .incident-header {
@@ -307,6 +332,51 @@ body {
 .no-units {
   color: #666;
   font-style: italic;
+}
+
+/* Messages List */
+.messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.message-item {
+  background: #3a3a50;
+  padding: 12px;
+  border-radius: 6px;
+  border-left: 3px solid #64B5F6;
+}
+
+.message-header {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.message-callsign {
+  background: rgba(100, 181, 246, 0.2);
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: #64B5F6;
+}
+
+.message-type {
+  background: rgba(255, 193, 7, 0.2);
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: #FFC107;
+}
+
+.message-content {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.85rem;
+  color: #ddd;
+  word-break: break-all;
+  white-space: pre-wrap;
+  line-height: 1.4;
 }
 
 /* Loading & Error */

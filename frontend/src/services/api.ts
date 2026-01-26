@@ -1,6 +1,16 @@
 import { Incident, Agency, Stats } from '../types';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+// Dynamically determine API URL based on current host (for accessing from other devices)
+const getApiBase = (): string => {
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL;
+  }
+  // Use the same hostname the page was loaded from, with backend port 8000
+  const host = window.location.hostname;
+  return `http://${host}:8000/api`;
+};
+
+const API_BASE = getApiBase();
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);

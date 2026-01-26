@@ -3,32 +3,28 @@ import { Agency } from '../types';
 
 interface AgencyFilterProps {
   agencies: Agency[];
-  selectedAgency: string;
-  onSelect: (agency: string) => void;
+  selectedAgencies: Set<string>;
+  onToggle: (agencyCode: string) => void;
 }
 
 export const AgencyFilter: React.FC<AgencyFilterProps> = ({
   agencies,
-  selectedAgency,
-  onSelect,
+  selectedAgencies,
+  onToggle,
 }) => {
+  const isSelected = (code: string) => selectedAgencies.has(code);
+  const noneSelected = selectedAgencies.size === 0;
+
   return (
     <div className="agency-filter">
-      <button
-        className={`agency-btn ${selectedAgency === 'ALL' ? 'active' : ''}`}
-        onClick={() => onSelect('ALL')}
-      >
-        ALL
-      </button>
       {agencies.map((agency) => (
         <button
           key={agency.code}
-          className={`agency-btn ${selectedAgency === agency.code ? 'active' : ''}`}
+          className={`agency-btn ${isSelected(agency.code) || noneSelected ? 'active' : 'inactive'}`}
           style={{
-            backgroundColor: selectedAgency === agency.code ? agency.color : undefined,
-            borderColor: agency.color,
+            borderColor: isSelected(agency.code) || noneSelected ? agency.color : '#555',
           }}
-          onClick={() => onSelect(agency.code)}
+          onClick={() => onToggle(agency.code)}
         >
           {agency.code}
         </button>

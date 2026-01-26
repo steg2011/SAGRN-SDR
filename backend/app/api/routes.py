@@ -41,6 +41,17 @@ class UnitResponse(BaseModel):
         from_attributes = True
 
 
+class IncidentMessageResponse(BaseModel):
+    id: int
+    raw_message: str
+    timestamp: datetime
+    callsign: Optional[str]
+    message_type: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
 class IncidentResponse(BaseModel):
     id: int
     unique_id: str
@@ -58,6 +69,7 @@ class IncidentResponse(BaseModel):
     agency_name: Optional[str]
     agency_color: Optional[str]
     units: List[UnitResponse]
+    messages: List[IncidentMessageResponse] = []
     created_at: datetime
     updated_at: datetime
 
@@ -178,6 +190,13 @@ async def get_incidents(
                 status=u.status,
                 dispatched_at=u.dispatched_at
             ) for u in inc.units],
+            messages=[IncidentMessageResponse(
+                id=m.id,
+                raw_message=m.raw_message,
+                timestamp=m.timestamp,
+                callsign=m.callsign,
+                message_type=m.message_type
+            ) for m in inc.messages],
             created_at=inc.created_at,
             updated_at=inc.updated_at
         ))
@@ -224,6 +243,13 @@ async def get_incident(
             status=u.status,
             dispatched_at=u.dispatched_at
         ) for u in incident.units],
+        messages=[IncidentMessageResponse(
+            id=m.id,
+            raw_message=m.raw_message,
+            timestamp=m.timestamp,
+            callsign=m.callsign,
+            message_type=m.message_type
+        ) for m in incident.messages],
         created_at=incident.created_at,
         updated_at=incident.updated_at
     )

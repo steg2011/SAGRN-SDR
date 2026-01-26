@@ -51,14 +51,20 @@ class MessageParser:
     # MFS standalone pattern
     MFS_PATTERN = re.compile(r'^MFS:\s*(.+)$')
 
-    # SES pattern
-    SES_PATTERN = re.compile(r'SES[_:]')
+    # SES pattern - more comprehensive matching
+    SES_PATTERN = re.compile(r'SES[_:\s]|^SES\b')
+
+    # SES incident dispatch pattern (similar to CFS format but for SES)
+    SES_INCIDENT_PATTERN = re.compile(
+        r'SES:\s*\*?(?:CFSRES|SESRES)\s+INC[:\s]*([A-Z]?\d+)\s+(\d{2}/\d{2}/\d{2})\s+(\d{2}:\d{2})\s+RESPOND\s+(.+?)(?:,\s*ALARM LEVEL:\s*(\d+))?,\s*(.+?),MAP:([^,]+)'
+    )
 
     # Job ID pattern (D01026, INC0091, S0030)
     JOB_ID_PATTERN = re.compile(r'(D\d{5}|INC\d+|S\d{4})')
 
-    # Map reference pattern
-    MAP_REF_PATTERN = re.compile(r'(\d{1,3}\s+[A-Z]\s+\d{1,2}|MAP:[A-Z]+\s+\d+[A-Z]?\s+[A-Z0-9]+)')
+    # Map reference pattern - includes optional book prefix (e.g., PUG for Port Augusta)
+    # Format: [BOOK_PREFIX] PAGE GRID ROW (e.g., "PUG 2 H 15" or "104 N 1")
+    MAP_REF_PATTERN = re.compile(r'((?:[A-Z]{2,4}\s+)?\d{1,3}\s+[A-Z]\s+\d{1,2}|MAP:[A-Z]+\s+\d+[A-Z]?\s+[A-Z0-9]+)')
 
     # Dispatch time pattern
     DISPATCH_TIME_PATTERN = re.compile(r'Disp:\s*(\d{2}:\d{2})')
@@ -78,14 +84,93 @@ class MessageParser:
         r'\[(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\]\s*ALN\|(.+)$'
     )
 
-    # SAAS incident types
-    SAAS_INCIDENT_TYPES = [
-        'Sick Perso', 'Cardiac or', 'Falls', 'Breathing', 'Unconsciou',
-        'Traumatic', 'Chest Pain', 'OTHER EMER', 'TRANSFER', 'Haemorrhag',
-        'Back Pain', 'Diabetic P', 'Drowning', 'ADMISSION', 'Discharge',
-        'Retrieval', 'Allergies', 'Stroke', 'Seizure', 'Psychiatric',
-        'Abdominal', 'Headache', 'Overdose', 'Assault', 'Burns'
-    ]
+    # SAAS incident types - truncated patterns mapped to full names
+    # The pager truncates job types, so we map partial strings to complete descriptions
+    SAAS_JOB_TYPE_LOOKUP = {
+        # Cardiac/Respiratory
+        'Cardiac or': 'Cardiac Arrest',
+        'Cardiac Ar': 'Cardiac Arrest',
+        'CardiacArr': 'Cardiac Arrest',
+        'Cardiac': 'Cardiac',
+        'Respirator': 'Respiratory Arrest',
+        'Respitarre': 'Respiratory Arrest',
+        'RespArrest': 'Respiratory Arrest',
+        'Breathing': 'Breathing Problems',
+        'Breathing ': 'Breathing Problems',
+
+        # General medical
+        'Sick Perso': 'Sick Person',
+        'Sick Per': 'Sick Person',
+        'SickPerson': 'Sick Person',
+        'Unconsciou': 'Unconscious',
+        'Unconscious': 'Unconscious',
+        'Chest Pain': 'Chest Pain',
+        'ChestPain': 'Chest Pain',
+        'Heart Prob': 'Heart Problem',
+        'Heart Problem': 'Heart Problem',
+        'HeartProb': 'Heart Problem',
+        'Stroke': 'Stroke',
+        'Seizure': 'Seizure',
+        'Seizures': 'Seizure',
+        'Diabetic P': 'Diabetic Problem',
+        'Diabetic': 'Diabetic Problem',
+        'Allergies': 'Allergic Reaction',
+        'Allergic': 'Allergic Reaction',
+        'Overdose': 'Overdose',
+        'Poisoning': 'Poisoning',
+
+        # Trauma
+        'Traumatic': 'Traumatic Injury',
+        'Trauma': 'Traumatic Injury',
+        'Falls': 'Falls',
+        'Fall': 'Falls',
+        'Assault': 'Assault',
+        'Burns': 'Burns',
+        'Burn': 'Burns',
+        'Drowning': 'Drowning',
+        'Electrocution': 'Electrocution',
+
+        # Hemorrhage
+        'Haemorrhag': 'Haemorrhage',
+        'Hemorrhage': 'Haemorrhage',
+        'Bleeding': 'Bleeding',
+
+        # Pain
+        'Back Pain': 'Back Pain',
+        'BackPain': 'Back Pain',
+        'Abdominal': 'Abdominal Pain',
+        'AbdoPain': 'Abdominal Pain',
+        'Headache': 'Headache',
+
+        # Mental health
+        'Psychiatric': 'Psychiatric',
+        'Psych': 'Psychiatric',
+        'Mental': 'Mental Health',
+
+        # Obstetric/Pediatric
+        'Pregnancy': 'Pregnancy/Childbirth',
+        'Childbirth': 'Pregnancy/Childbirth',
+        'Labour': 'Labour',
+        'Pediatric': 'Pediatric Emergency',
+
+        # Transfer/Admin types
+        'TRANSFER': 'Transfer',
+        'Transfer': 'Transfer',
+        'ADMISSION': 'Admission',
+        'Admission': 'Admission',
+        'Discharge': 'Discharge',
+        'Retrieval': 'Retrieval',
+
+        # Other emergency
+        'OTHER EMER': 'Other Emergency',
+        'OtherEmerg': 'Other Emergency',
+        'Unknown': 'Unknown',
+        'MVA': 'Motor Vehicle Accident',
+        'Traffic': 'Traffic Accident',
+    }
+
+    # List of truncated patterns to search for (in order of specificity)
+    SAAS_INCIDENT_PATTERNS = list(SAAS_JOB_TYPE_LOOKUP.keys())
 
     # CFS/MFS incident types
     FIRE_INCIDENT_TYPES = [
@@ -168,6 +253,34 @@ class MessageParser:
     def _identify_agency_and_parse(self, content: str, parsed: ParsedMessage) -> ParsedMessage:
         """Identify agency and parse message content"""
 
+        # Check for SES incident dispatch FIRST (before CFS/MFS)
+        # SES messages can come through CFSRES system but should be identified as SES
+        if content.startswith('SES:') or content.startswith('SES '):
+            ses_match = self.SES_INCIDENT_PATTERN.search(content)
+            if ses_match:
+                parsed.agency = 'SES'
+                parsed.incident_number = ses_match.group(1)
+                parsed.message_type = 'dispatch'
+                parsed.incident_type = ses_match.group(4).strip()
+                parsed.alarm_level = int(ses_match.group(5)) if ses_match.group(5) else 1
+                parsed.location_text = ses_match.group(6).strip()
+                parsed.map_reference = ses_match.group(7).strip()
+
+                # Extract units paged
+                units_match = re.search(r':([A-Z0-9_\s]+):$', content)
+                if units_match:
+                    parsed.units_paged = [u.strip() for u in units_match.group(1).split() if u.strip()]
+
+                return parsed
+
+            # SES info message
+            parsed.agency = 'SES'
+            if 'STAND DOWN' in content.upper():
+                parsed.message_type = 'stand_down'
+            else:
+                parsed.message_type = 'info'
+            return parsed
+
         # Check for CFS/MFS incident dispatch
         cfs_match = self.CFS_INCIDENT_PATTERN.search(content)
         if cfs_match:
@@ -230,7 +343,7 @@ class MessageParser:
 
             # Check for facility prefix
             if remainder.startswith('@') or ': @' in remainder:
-                facility_match = re.match(r':?\s*@([^@]+?)\s+(\d{1,3}\s+[A-Z]\s+\d{1,2})', remainder)
+                facility_match = re.match(r':?\s*@([^@]+?)\s+((?:[A-Z]{2,4}\s+)?\d{1,3}\s+[A-Z]\s+\d{1,2})', remainder)
                 if facility_match:
                     parsed.location_text = '@' + facility_match.group(1).strip()
 
@@ -239,38 +352,73 @@ class MessageParser:
             if job_match:
                 parsed.job_id = job_match.group(1)
 
-            # Extract map reference
-            map_match = re.search(r'(\d{1,3}\s+[A-Z]\s+\d{1,2})', remainder)
+            # Extract map reference - includes optional book prefix (e.g., "PUG 2 H 15" or "104 N 1")
+            # Book prefix is a standalone 2-4 letter code, NOT part of a suburb name
+            # Use word boundary to ensure we match complete words only
+            map_match = re.search(r'(?:^|\s)(([A-Z]{2,4})\s+(\d{1,2})\s+[A-Z]\s+\d{1,2})(?=\s+D\d{5}|\s+Disp:|\s*$)', remainder)
             if map_match:
-                parsed.map_reference = map_match.group(1)
+                # Check if the potential prefix is a common suburb word - if so, it's not a book prefix
+                potential_prefix = map_match.group(2)
+                suburb_words = {'NORTH', 'SOUTH', 'EAST', 'WEST', 'CENTRAL', 'PARK', 'HILLS', 'VALE',
+                               'GARDENS', 'BEACH', 'BAY', 'PORT', 'MOUNT', 'POINT', 'VIEW', 'CREEK',
+                               'FLAT', 'FLATS', 'DOWNS', 'GROVE', 'HEIGHTS', 'PLAINS', 'RIDGE'}
+                if potential_prefix not in suburb_words:
+                    parsed.map_reference = map_match.group(1).strip()
+
+            # If no book prefix match, try simple numeric pattern
+            if not parsed.map_reference:
+                map_match = re.search(r'(\d{1,3}\s+[A-Z]\s+\d{1,2})(?=\s+D\d{5}|\s+Disp:|\s*$)', remainder)
+                if map_match:
+                    parsed.map_reference = map_match.group(1)
 
             # Extract dispatch time
             disp_match = self.DISPATCH_TIME_PATTERN.search(remainder)
             if disp_match:
                 parsed.dispatch_time = disp_match.group(1)
 
-            # Extract incident type (last word/phrase)
-            for inc_type in self.SAAS_INCIDENT_TYPES:
-                if inc_type in remainder:
-                    parsed.incident_type = inc_type
-                    break
+            # Extract incident type using lookup table
+            # Search for truncated patterns and map to full names
+            parsed.incident_type = self._extract_saas_incident_type(remainder)
 
-            # Extract suburb - usually after map ref, or first capitalized word
-            # Try to get suburb from before map reference
+            # Extract suburb - the text before the map reference
+            # SAAS format: "SUBURB MAP_REF JOB_ID Disp: TIME INCIDENT_TYPE"
+            # Suburbs can be multi-word like "PORT AUGUSTA" or "WOODVILLE NORTH"
+            # Map reference can have optional book prefix like "PUG 2 H 15" or just "104 N 1"
             if parsed.map_reference:
-                parts = remainder.split(parsed.map_reference)[0].strip().split()
-                # Look for suburb (capitalized word before map ref)
-                for part in reversed(parts):
-                    if part.isupper() and len(part) > 2 and not part.startswith('@'):
-                        parsed.suburb = part
+                before_map = remainder.split(parsed.map_reference)[0].strip()
+                # Remove facility prefix if present
+                if before_map.startswith('@'):
+                    facility_end = before_map.find(' ')
+                    if facility_end > 0:
+                        before_map = before_map[facility_end:].strip()
+
+                # The suburb is all the uppercase text before the map reference
+                # Clean up any trailing/leading whitespace and replace underscores
+                suburb_text = before_map.strip()
+                if suburb_text and re.match(r'^[A-Z][A-Z_\s]+$', suburb_text):
+                    parsed.suburb = suburb_text.replace('_', ' ')
+            else:
+                # Try to extract suburb from the start of remainder if no map ref
+                # Look for consecutive uppercase words at the start
+                parts = remainder.split()
+                suburb_parts = []
+                for part in parts:
+                    if re.match(r'^[A-Z][A-Z_]+$', part) and not part.startswith('@'):
+                        suburb_parts.append(part.replace('_', ' '))
+                    else:
                         break
+                if suburb_parts:
+                    parsed.suburb = ' '.join(suburb_parts)
 
             return parsed
 
-        # Check for SES
+        # Check for SES (catch any remaining SES patterns not caught above)
         if self.SES_PATTERN.search(content):
             parsed.agency = 'SES'
-            parsed.message_type = 'info'
+            if 'STAND DOWN' in content.upper():
+                parsed.message_type = 'stand_down'
+            else:
+                parsed.message_type = 'info'
             return parsed
 
         # Check for MedStar
@@ -299,6 +447,62 @@ class MessageParser:
         parsed.message_type = 'other'
 
         return parsed
+
+    def _extract_saas_incident_type(self, text: str) -> Optional[str]:
+        """
+        Extract SAAS incident type from message text using lookup table.
+        Handles truncated job types by matching patterns and returning full names.
+        """
+        # Sort patterns by length (longest first) for more specific matches
+        sorted_patterns = sorted(self.SAAS_INCIDENT_PATTERNS, key=len, reverse=True)
+
+        for pattern in sorted_patterns:
+            if pattern in text:
+                return self.SAAS_JOB_TYPE_LOOKUP[pattern]
+
+        # Fuzzy matching fallback - check for partial matches using word boundaries
+        # This prevents matching substrings inside other words (e.g., 'od' in 'NORWOOD')
+        text_lower = text.lower()
+
+        # Check for common patterns that might be split or slightly different
+        # Use word boundary matching to avoid false positives
+        fuzzy_matches = [
+            ('cardiac', 'Cardiac'),
+            ('arrest', 'Cardiac Arrest'),
+            ('breathing', 'Breathing Problems'),
+            ('unconscious', 'Unconscious'),
+            ('chest', 'Chest Pain'),
+            ('heart', 'Heart Problem'),
+            ('trauma', 'Traumatic Injury'),
+            ('fall', 'Falls'),
+            ('seizure', 'Seizure'),
+            ('stroke', 'Stroke'),
+            ('diabetic', 'Diabetic Problem'),
+            ('overdose', 'Overdose'),
+            ('bleed', 'Bleeding'),
+            ('haemorrhag', 'Haemorrhage'),
+            ('hemorrhag', 'Haemorrhage'),
+            ('assault', 'Assault'),
+            ('burn', 'Burns'),
+            ('drown', 'Drowning'),
+            ('psychiatric', 'Psychiatric'),
+            ('transfer', 'Transfer'),
+            ('admission', 'Admission'),
+            ('discharge', 'Discharge'),
+            ('retrieval', 'Retrieval'),
+            ('abdomin', 'Abdominal Pain'),
+            ('headache', 'Headache'),
+            ('back pain', 'Back Pain'),
+            ('allergic', 'Allergic Reaction'),
+            ('sick', 'Sick Person'),
+        ]
+
+        for keyword, full_name in fuzzy_matches:
+            # Use word boundary regex to avoid matching substrings inside other words
+            if re.search(r'\b' + re.escape(keyword), text_lower):
+                return full_name
+
+        return None
 
     def is_saas_job(self, parsed: ParsedMessage) -> bool:
         """Check if this is a SAAS job (should not be geocoded as they don't have addresses)"""

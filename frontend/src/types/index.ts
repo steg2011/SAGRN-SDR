@@ -4,6 +4,14 @@ export interface Unit {
   dispatched_at: string | null;
 }
 
+export interface IncidentMessage {
+  id: number;
+  raw_message: string;
+  timestamp: string;
+  callsign: string | null;
+  message_type: string | null;
+}
+
 export interface Incident {
   id: number;
   unique_id: string;
@@ -21,6 +29,7 @@ export interface Incident {
   agency_name: string | null;
   agency_color: string | null;
   units: Unit[];
+  messages: IncidentMessage[];
   created_at: string;
   updated_at: string;
 }

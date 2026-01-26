@@ -117,6 +117,32 @@ export const IncidentDetail: React.FC<IncidentDetailProps> = ({ incident, onClos
               )}
             </div>
           </div>
+
+          {incident.messages && incident.messages.length > 0 && (
+            <div className="detail-section">
+              <h3>Pager Messages ({incident.messages.length})</h3>
+              <div className="messages-list">
+                {incident.messages.map((msg, i) => (
+                  <div key={i} className="message-item">
+                    <div className="message-header">
+                      <span className="message-time">
+                        {formatDateTime(msg.timestamp)}
+                      </span>
+                      {msg.callsign && (
+                        <span className="message-callsign">{msg.callsign}</span>
+                      )}
+                      {msg.message_type && (
+                        <span className="message-type">{msg.message_type}</span>
+                      )}
+                    </div>
+                    <div className="message-content">
+                      {msg.raw_message}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
