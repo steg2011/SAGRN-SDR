@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Incident, Agency, Stats } from './types';
-import { getIncidents, getAgencies, getStats } from './services/api';
+import { Incident, Agency, Stats, RawMessage } from './types';
+import { getIncidents, getAgencies, getStats, getRawMessages } from './services/api';
 import { IncidentCard } from './components/IncidentCard';
 import { IncidentDetail } from './components/IncidentDetail';
 import { AgencyFilter } from './components/AgencyFilter';
+import { RawMessageCard } from './components/RawMessageCard';
 import './App.css';
 
 const REFRESH_INTERVAL = 10000; // 10 seconds
@@ -19,10 +20,15 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [newIncidentIds, setNewIncidentIds] = useState<Set<number>>(new Set());
+  const [rawMode, setRawMode] = useState(false);
+  const [rawMessages, setRawMessages] = useState<RawMessage[]>([]);
+  const [newRawMessageIds, setNewRawMessageIds] = useState<Set<number>>(new Set());
 
   // Track which incidents we've seen (persists across renders)
   const seenIncidentIds = useRef<Set<number>>(new Set());
+  const seenRawMessageIds = useRef<Set<number>>(new Set());
   const isFirstLoad = useRef(true);
+  const isFirstRawLoad = useRef(true);
 
   const fetchData = useCallback(async () => {
     try {
@@ -78,11 +84,61 @@ function App() {
     }
   }, []);
 
+  const fetchRawData = useCallback(async () => {
+    try {
+      const rawData = await getRawMessages(200);
+
+      // Detect new raw messages (skip on first load)
+      if (!isFirstRawLoad.current) {
+        const newIds: number[] = [];
+        for (const msg of rawData) {
+          if (!seenRawMessageIds.current.has(msg.id)) {
+            newIds.push(msg.id);
+          }
+        }
+
+        if (newIds.length > 0) {
+          setNewRawMessageIds(prev => {
+            const next = new Set(prev);
+            newIds.forEach(id => next.add(id));
+            return next;
+          });
+
+          setTimeout(() => {
+            setNewRawMessageIds(prev => {
+              const next = new Set(prev);
+              newIds.forEach(id => next.delete(id));
+              return next;
+            });
+          }, NEW_INCIDENT_DURATION);
+        }
+      }
+
+      rawData.forEach(msg => seenRawMessageIds.current.add(msg.id));
+      isFirstRawLoad.current = false;
+
+      setRawMessages(rawData);
+      setLastUpdate(new Date());
+      setError(null);
+    } catch (err) {
+      setError('Failed to load raw messages. Retrying...');
+      console.error('Fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, REFRESH_INTERVAL);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+    if (rawMode) {
+      fetchRawData();
+      const interval = setInterval(fetchRawData, REFRESH_INTERVAL);
+      return () => clearInterval(interval);
+    } else {
+      fetchData();
+      const interval = setInterval(fetchData, REFRESH_INTERVAL);
+      return () => clearInterval(interval);
+    }
+  }, [fetchData, fetchRawData, rawMode]);
 
   const handleAgencyToggle = (agencyCode: string) => {
     setSelectedAgencies((prev) => {
@@ -133,30 +189,57 @@ function App() {
         </div>
       </header>
 
-      <AgencyFilter
-        agencies={agencies}
-        selectedAgencies={selectedAgencies}
-        onToggle={handleAgencyToggle}
-      />
+      <div className="filter-bar">
+        <AgencyFilter
+          agencies={agencies}
+          selectedAgencies={selectedAgencies}
+          onToggle={handleAgencyToggle}
+          disabled={rawMode}
+        />
+        <button
+          className={`raw-btn ${rawMode ? 'active' : ''}`}
+          onClick={() => setRawMode(!rawMode)}
+        >
+          RAW
+        </button>
+      </div>
 
       {error && <div className="error-banner">{error}</div>}
 
-      <main className="incident-list">
-        {filteredIncidents.length === 0 ? (
-          <div className="no-incidents">
-            No incidents found for the selected filter.
-          </div>
-        ) : (
-          filteredIncidents.map((incident) => (
-            <IncidentCard
-              key={incident.id}
-              incident={incident}
-              isNew={newIncidentIds.has(incident.id)}
-              onClick={() => setSelectedIncident(incident)}
-            />
-          ))
-        )}
-      </main>
+      {rawMode ? (
+        <main className="raw-message-list">
+          {rawMessages.length === 0 ? (
+            <div className="no-incidents">
+              No raw messages available.
+            </div>
+          ) : (
+            rawMessages.map((msg) => (
+              <RawMessageCard
+                key={msg.id}
+                message={msg}
+                isNew={newRawMessageIds.has(msg.id)}
+              />
+            ))
+          )}
+        </main>
+      ) : (
+        <main className="incident-list">
+          {filteredIncidents.length === 0 ? (
+            <div className="no-incidents">
+              No incidents found for the selected filter.
+            </div>
+          ) : (
+            filteredIncidents.map((incident) => (
+              <IncidentCard
+                key={incident.id}
+                incident={incident}
+                isNew={newIncidentIds.has(incident.id)}
+                onClick={() => setSelectedIncident(incident)}
+              />
+            ))
+          )}
+        </main>
+      )}
 
       {selectedIncident && (
         <IncidentDetail

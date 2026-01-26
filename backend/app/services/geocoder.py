@@ -4,12 +4,12 @@ import re
 from typing import Optional, Tuple
 from datetime import datetime
 import httpx
-from rapidfuzz import fuzz, process
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.models import Location, Incident
+from app.services.suburb_matcher import get_suburb_matcher
 
 
 settings = get_settings()
@@ -18,19 +18,11 @@ settings = get_settings()
 class GeocoderService:
     """Geocoding service using Nominatim with fuzzy matching for SA addresses"""
 
-    # Common SA suburb corrections
-    SUBURB_CORRECTIONS = {
-        'ADELAIE': 'ADELAIDE',
-        'ADEALIDE': 'ADELAIDE',
-        'ADELIADE': 'ADELAIDE',
-        'MOUNT GAMBIER': 'MOUNT GAMBIER',
-        'MT GAMBIER': 'MOUNT GAMBIER',
-        'MT BARKER': 'MOUNT BARKER',
-        'PT AUGUSTA': 'PORT AUGUSTA',
-        'PT LINCOLN': 'PORT LINCOLN',
-        'PT PIRIE': 'PORT PIRIE',
-        'PT NOARLUNGA': 'PORT NOARLUNGA',
-    }
+    def __init__(self):
+        self.rate_limiter = asyncio.Semaphore(1)
+        self.last_request_time = 0
+        self.min_interval = settings.geocode_rate_limit
+        self.suburb_matcher = get_suburb_matcher()
 
     # Street type expansions
     STREET_TYPES = {
@@ -48,11 +40,6 @@ class GeocoderService:
         'BVD': 'BOULEVARD',
         'BLVD': 'BOULEVARD',
     }
-
-    def __init__(self):
-        self.rate_limiter = asyncio.Semaphore(1)
-        self.last_request_time = 0
-        self.min_interval = settings.geocode_rate_limit
 
     async def geocode_incident(
         self,
@@ -147,7 +134,7 @@ class GeocoderService:
         address: str,
         suburb: Optional[str] = None
     ) -> Optional[str]:
-        """Normalize and clean address for geocoding"""
+        """Normalize and clean address for geocoding using fuzzy suburb matching"""
         if not address:
             return None
 
@@ -158,20 +145,41 @@ class GeocoderService:
         address = re.sub(r'MAP:[A-Z]+\s+\d+[A-Z]?\s+[A-Z0-9]+', '', address)
         address = re.sub(r'\d{1,3}\s+[A-Z]\s+\d{1,2}', '', address)
 
-        # Apply suburb corrections
-        for wrong, correct in self.SUBURB_CORRECTIONS.items():
-            address = address.replace(wrong, correct)
+        # Normalize suburb using fuzzy matching if provided
+        if suburb:
+            normalized_suburb = self.suburb_matcher.normalize(suburb)
+            if normalized_suburb != suburb.upper():
+                # Replace the original suburb with the corrected one
+                address = address.replace(suburb, normalized_suburb)
+                address = address.replace(suburb.upper(), normalized_suburb)
 
-        # Expand street type abbreviations
-        words = address.split()
-        expanded_words = []
-        for word in words:
-            upper_word = word.upper()
-            if upper_word in self.STREET_TYPES:
-                expanded_words.append(self.STREET_TYPES[upper_word])
-            else:
-                expanded_words.append(word)
-        address = ' '.join(expanded_words)
+        # Try to find and normalize any suburb-like words in the address
+        # Split address and check each word/phrase against suburb list
+        words = address.upper().split()
+        normalized_words = []
+        i = 0
+        while i < len(words):
+            # Try multi-word suburb matches (up to 3 words)
+            matched = False
+            for length in range(3, 0, -1):
+                if i + length <= len(words):
+                    phrase = ' '.join(words[i:i+length])
+                    match_result = self.suburb_matcher.match(phrase)
+                    if match_result and match_result[1] >= 85:  # High confidence for in-address matching
+                        normalized_words.append(match_result[0])
+                        i += length
+                        matched = True
+                        break
+
+            if not matched:
+                # Check if it's a street type abbreviation
+                if words[i] in self.STREET_TYPES:
+                    normalized_words.append(self.STREET_TYPES[words[i]])
+                else:
+                    normalized_words.append(words[i])
+                i += 1
+
+        address = ' '.join(normalized_words)
 
         # Add South Australia if not present
         if 'SA' not in address.upper() and 'SOUTH AUSTRALIA' not in address.upper():

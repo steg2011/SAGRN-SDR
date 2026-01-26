@@ -45,3 +45,9 @@ export interface Stats {
   active_incidents: number;
   by_agency: Record<string, number>;
 }
+
+export interface RawMessage {
+  id: number;
+  message: string;
+  timestamp: string;
+}

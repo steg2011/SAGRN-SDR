@@ -281,6 +281,51 @@ async def get_messages(
     ) for m in messages]
 
 
+class RawMessageResponse(BaseModel):
+    id: int
+    message: str  # Raw message with FLEX prefix stripped
+    timestamp: datetime
+
+    class Config:
+        from_attributes = True
+
+
+def strip_flex_prefix(raw_message: str) -> str:
+    """
+    Strip the FLEX prefix from a raw pager message.
+    Example input: FLEX|2026-01-26 05:08:06|1600/2/K/A|02.003|001933169|ALN|C82 PR: 2...
+    Example output: C82 PR: 2...
+    """
+    import re
+    # Match FLEX|timestamp|mode|frame|capcode|type| prefix pattern
+    pattern = r'^FLEX\|[^|]+\|[^|]+\|[^|]+\|[^|]+\|[^|]+\|'
+    return re.sub(pattern, '', raw_message)
+
+
+@router.get("/messages/raw", response_model=List[RawMessageResponse])
+async def get_raw_messages(
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get recent raw messages with FLEX prefix stripped.
+    Returns all messages without any parsing or filtering,
+    just the raw content after removing the FLEX header.
+    """
+    result = await db.execute(
+        select(Message)
+        .order_by(Message.timestamp.desc())
+        .limit(limit)
+    )
+    messages = result.scalars().all()
+
+    return [RawMessageResponse(
+        id=m.id,
+        message=strip_flex_prefix(m.raw_message),
+        timestamp=m.timestamp
+    ) for m in messages]
+
+
 @router.get("/agencies")
 async def get_agencies(db: AsyncSession = Depends(get_db)):
     """Get all agencies with their colors"""

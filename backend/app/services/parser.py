@@ -3,6 +3,8 @@ from datetime import datetime
 from typing import Optional
 from dataclasses import dataclass
 
+from app.services.suburb_matcher import get_suburb_matcher
+
 
 @dataclass
 class ParsedMessage:
@@ -35,14 +37,23 @@ class ParsedMessage:
 class MessageParser:
     """Parser for SAGRN pager messages"""
 
+    def __init__(self):
+        self.suburb_matcher = get_suburb_matcher()
+
     # SAAS ambulance callsign patterns
     SAAS_CALLSIGN_PATTERN = re.compile(
         r'^([A-Z]{1,4}\d{1,4}|EVENT\d+|MS\d+|LS\d+|SO\d+|HI\d+|OAK\d+)\s+PR:\s*(\d+)\s*-\s*(.+)$'
     )
 
-    # CFS/MFS incident patterns
+    # CFS/MFS incident patterns - MFS format with ALARM LEVEL
     CFS_INCIDENT_PATTERN = re.compile(
         r'(CFS|MFS):\s*\*?CFSRES\s+INC[:\s]*([A-Z]?\d+)\s+(\d{2}/\d{2}/\d{2})\s+(\d{2}:\d{2})\s+RESPOND\s+(.+?)(?:,\s*ALARM LEVEL:\s*(\d+))?,\s*(.+?),MAP:([^,]+)'
+    )
+
+    # SES/CFS incident pattern - uses P1/P2 priority format instead of ALARM LEVEL
+    # Format: MFS: *CFSRES INC:S0030 25/01/26 16:56 RESPOND SEARCH P1 26 DALKEITH DR MOUNT GAMBIER MAP:MGB 2 E12
+    SES_CFS_INCIDENT_PATTERN = re.compile(
+        r'(CFS|MFS):\s*\*?CFSRES\s+INC:([A-Z]\d+)\s+(\d{2}/\d{2}/\d{2})\s+(\d{2}:\d{2})\s+RESPOND\s+(.+?)\s+P(\d)\s+(.+?)\s+MAP:([^\s,]+)'
     )
 
     # Simpler CFS message pattern
@@ -61,6 +72,14 @@ class MessageParser:
 
     # Job ID pattern (D01026, INC0091, S0030)
     JOB_ID_PATTERN = re.compile(r'(D\d{5}|INC\d+|S\d{4})')
+
+    # Unit callsign patterns for agency detection
+    # MFS: 3 uppercase letters + exactly 3 digits (e.g., MBR731, APK369)
+    MFS_UNIT_PATTERN = re.compile(r'\b[A-Z]{3}\d{3}\b')
+    # CFS: 2-4 uppercase letters + exactly 2 digits + optional single letter suffix (e.g., MTB34, KAPD34P)
+    CFS_UNIT_PATTERN = re.compile(r'\b[A-Z]{2,4}\d{2}[A-Z]?\b')
+    # SES: Units with SES prefix (e.g., SES_RDOS93) - incident number INC:S is primary identifier
+    SES_UNIT_PATTERN = re.compile(r'\bSES[_A-Z0-9]+\b')
 
     # Map reference pattern - includes optional book prefix (e.g., PUG for Port Augusta)
     # Format: [BOOK_PREFIX] PAGE GRID ROW (e.g., "PUG 2 H 15" or "104 N 1")
@@ -281,10 +300,31 @@ class MessageParser:
                 parsed.message_type = 'info'
             return parsed
 
-        # Check for CFS/MFS incident dispatch
+        # Check for SES/CFS incident dispatch (INC:S format with P1/P2 priority) FIRST
+        # This pattern is more specific and should be checked before the general pattern
+        ses_cfs_match = self.SES_CFS_INCIDENT_PATTERN.search(content)
+        if ses_cfs_match:
+            parsed.incident_number = ses_cfs_match.group(2)  # e.g., S0030
+            parsed.message_type = 'dispatch'
+            parsed.incident_type = ses_cfs_match.group(5).strip()
+            parsed.priority = int(ses_cfs_match.group(6))  # P1, P2, etc.
+            parsed.alarm_level = int(ses_cfs_match.group(6))  # Use priority as alarm level
+            parsed.location_text = ses_cfs_match.group(7).strip()
+            parsed.map_reference = ses_cfs_match.group(8).strip()
+
+            # Extract units paged
+            units_match = re.search(r':([A-Z0-9_\s]+):$', content)
+            if units_match:
+                parsed.units_paged = [u.strip() for u in units_match.group(1).split() if u.strip()]
+
+            # Determine agency - INC:S format means SES job
+            parsed.agency = self._determine_fire_agency(parsed.incident_number, parsed.units_paged)
+
+            return parsed
+
+        # Check for CFS/MFS incident dispatch (standard format with ALARM LEVEL)
         cfs_match = self.CFS_INCIDENT_PATTERN.search(content)
         if cfs_match:
-            parsed.agency = cfs_match.group(1)  # CFS or MFS
             parsed.incident_number = cfs_match.group(2)
             parsed.message_type = 'dispatch'
             parsed.incident_type = cfs_match.group(5).strip()
@@ -296,6 +336,9 @@ class MessageParser:
             units_match = re.search(r':([A-Z0-9_\s]+):$', content)
             if units_match:
                 parsed.units_paged = [u.strip() for u in units_match.group(1).split() if u.strip()]
+
+            # Determine agency based on incident number and unit callsigns
+            parsed.agency = self._determine_fire_agency(parsed.incident_number, parsed.units_paged)
 
             return parsed
 
@@ -357,11 +400,23 @@ class MessageParser:
             # Use word boundary to ensure we match complete words only
             map_match = re.search(r'(?:^|\s)(([A-Z]{2,4})\s+(\d{1,2})\s+[A-Z]\s+\d{1,2})(?=\s+D\d{5}|\s+Disp:|\s*$)', remainder)
             if map_match:
-                # Check if the potential prefix is a common suburb word - if so, it's not a book prefix
+                # Check if the potential prefix is a common suburb word/abbreviation - if so, it's not a book prefix
                 potential_prefix = map_match.group(2)
-                suburb_words = {'NORTH', 'SOUTH', 'EAST', 'WEST', 'CENTRAL', 'PARK', 'HILLS', 'VALE',
-                               'GARDENS', 'BEACH', 'BAY', 'PORT', 'MOUNT', 'POINT', 'VIEW', 'CREEK',
-                               'FLAT', 'FLATS', 'DOWNS', 'GROVE', 'HEIGHTS', 'PLAINS', 'RIDGE'}
+                suburb_words = {
+                    # Full words
+                    'NORTH', 'SOUTH', 'EAST', 'WEST', 'CENTRAL', 'PARK', 'HILLS', 'VALE',
+                    'GARDENS', 'BEACH', 'BAY', 'PORT', 'MOUNT', 'POINT', 'VIEW', 'CREEK',
+                    'FLAT', 'FLATS', 'DOWNS', 'GROVE', 'HEIGHTS', 'PLAINS', 'RIDGE',
+                    # Common abbreviations that might appear at end of suburb names
+                    'HTS', 'HGHTS', 'HGTS',  # Heights
+                    'VLE', 'VL',  # Vale
+                    'VLY', 'VAL',  # Valley
+                    'GDNS', 'GDN',  # Gardens
+                    'BCH',  # Beach
+                    'PK',  # Park
+                    'GRV',  # Grove
+                    'PLN', 'PLNS',  # Plain/Plains
+                }
                 if potential_prefix not in suburb_words:
                     parsed.map_reference = map_match.group(1).strip()
 
@@ -396,7 +451,9 @@ class MessageParser:
                 # Clean up any trailing/leading whitespace and replace underscores
                 suburb_text = before_map.strip()
                 if suburb_text and re.match(r'^[A-Z][A-Z_\s]+$', suburb_text):
-                    parsed.suburb = suburb_text.replace('_', ' ')
+                    suburb_text = suburb_text.replace('_', ' ')
+                    # Normalize suburb using fuzzy matching
+                    parsed.suburb = self.suburb_matcher.normalize(suburb_text)
             else:
                 # Try to extract suburb from the start of remainder if no map ref
                 # Look for consecutive uppercase words at the start
@@ -408,7 +465,9 @@ class MessageParser:
                     else:
                         break
                 if suburb_parts:
-                    parsed.suburb = ' '.join(suburb_parts)
+                    suburb_text = ' '.join(suburb_parts)
+                    # Normalize suburb using fuzzy matching
+                    parsed.suburb = self.suburb_matcher.normalize(suburb_text)
 
             return parsed
 
@@ -430,8 +489,52 @@ class MessageParser:
         # Check for notification/personal messages
         if content.startswith('NOTIFICATION'):
             parsed.message_type = 'notification'
-            # Try to extract agency from content
-            if 'CFS' in content:
+
+            # Try to parse as a fire service dispatch notification
+            # Remove 'NOTIFICATION ' prefix and parse the rest
+            notification_content = content[len('NOTIFICATION '):].strip()
+
+            # Try SES/CFS format first (INC:S with P1/P2)
+            notif_ses_match = self.SES_CFS_INCIDENT_PATTERN.search(notification_content)
+            if notif_ses_match:
+                parsed.incident_number = notif_ses_match.group(2)
+                parsed.incident_type = notif_ses_match.group(5).strip()
+                parsed.priority = int(notif_ses_match.group(6))
+                parsed.alarm_level = int(notif_ses_match.group(6))
+                parsed.location_text = notif_ses_match.group(7).strip()
+                parsed.map_reference = notif_ses_match.group(8).strip()
+
+                # Extract units paged
+                units_match = re.search(r':([A-Z0-9_\s]+):$', notification_content)
+                if units_match:
+                    parsed.units_paged = [u.strip() for u in units_match.group(1).split() if u.strip()]
+
+                # Determine agency based on incident number and units
+                parsed.agency = self._determine_fire_agency(parsed.incident_number, parsed.units_paged)
+                return parsed
+
+            # Try standard MFS format (with ALARM LEVEL)
+            notif_match = self.CFS_INCIDENT_PATTERN.search(notification_content)
+            if notif_match:
+                parsed.incident_number = notif_match.group(2)
+                parsed.incident_type = notif_match.group(5).strip()
+                parsed.alarm_level = int(notif_match.group(6)) if notif_match.group(6) else 1
+                parsed.location_text = notif_match.group(7).strip()
+                parsed.map_reference = notif_match.group(8).strip()
+
+                # Extract units paged
+                units_match = re.search(r':([A-Z0-9_\s]+):$', notification_content)
+                if units_match:
+                    parsed.units_paged = [u.strip() for u in units_match.group(1).split() if u.strip()]
+
+                # Determine agency based on incident number and units
+                parsed.agency = self._determine_fire_agency(parsed.incident_number, parsed.units_paged)
+                return parsed
+
+            # Fallback: try to extract agency from content keywords
+            if 'SES' in content:
+                parsed.agency = 'SES'
+            elif 'CFS' in content:
                 parsed.agency = 'CFS'
             elif 'MFS' in content:
                 parsed.agency = 'MFS'
@@ -503,6 +606,47 @@ class MessageParser:
                 return full_name
 
         return None
+
+    def _determine_fire_agency(self, incident_number: str, units_paged: list) -> str:
+        """
+        Determine the fire agency (MFS, CFS, or SES) based on incident number and unit callsigns.
+
+        Rules:
+        - SES: Incident number starts with 'S' (from INC:S format, e.g., S0030)
+        - MFS: Unit callsigns match pattern [A-Z]{3}\d{3} (e.g., MBR731, APK369)
+        - CFS: Unit callsigns match pattern [A-Z]{2,4}\d{2}[A-Z]? (e.g., MTB34, KAPD34P)
+        """
+        # Check for SES incident number (starts with 'S')
+        if incident_number and incident_number.startswith('S'):
+            return 'SES'
+
+        # Count MFS and CFS units to determine agency
+        mfs_count = 0
+        cfs_count = 0
+
+        for unit in units_paged:
+            # Skip duty officer callsigns and other non-appliance callsigns
+            if '_' in unit or unit.startswith('RDOS') or unit.startswith('SDO'):
+                continue
+
+            # Check for MFS pattern: 3 letters + 3 digits (e.g., MBR731)
+            if self.MFS_UNIT_PATTERN.fullmatch(unit):
+                mfs_count += 1
+            # Check for CFS pattern: 2-4 letters + 2 digits + optional letter (e.g., MTB34, KAPD34P)
+            elif self.CFS_UNIT_PATTERN.fullmatch(unit):
+                cfs_count += 1
+
+        # Determine agency based on unit counts
+        if mfs_count > 0 and cfs_count == 0:
+            return 'MFS'
+        elif cfs_count > 0 and mfs_count == 0:
+            return 'CFS'
+        elif mfs_count > 0 and cfs_count > 0:
+            # Mixed response - use majority, default to MFS if equal
+            return 'MFS' if mfs_count >= cfs_count else 'CFS'
+        else:
+            # No recognizable units - default to MFS (as dispatched through MFS system)
+            return 'MFS'
 
     def is_saas_job(self, parsed: ParsedMessage) -> bool:
         """Check if this is a SAAS job (should not be geocoded as they don't have addresses)"""

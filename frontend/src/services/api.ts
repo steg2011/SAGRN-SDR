@@ -1,4 +1,4 @@
-import { Incident, Agency, Stats } from '../types';
+import { Incident, Agency, Stats, RawMessage } from '../types';
 
 // Dynamically determine API URL based on current host (for accessing from other devices)
 const getApiBase = (): string => {
@@ -42,4 +42,8 @@ export async function getAgencies(): Promise<Agency[]> {
 
 export async function getStats(): Promise<Stats> {
   return fetchJson<Stats>(`${API_BASE}/stats`);
+}
+
+export async function getRawMessages(limit: number = 100): Promise<RawMessage[]> {
+  return fetchJson<RawMessage[]>(`${API_BASE}/messages/raw?limit=${limit}`);
 }
