@@ -62,6 +62,9 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({ incident, isNew, onC
       </div>
 
       <div className="incident-type">
+        {incident.agency_code === 'SAAS' && incident.priority != null && (
+          <span className={`priority-badge ${incident.priority === 1 ? 'priority-1' : ''}`}>P{incident.priority}</span>
+        )}
         {incident.incident_type || 'Unknown Incident'}
       </div>
 

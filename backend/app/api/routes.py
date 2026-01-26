@@ -62,6 +62,7 @@ class IncidentResponse(BaseModel):
     incident_date: datetime
     incident_type: Optional[str]
     alarm_level: Optional[int]
+    priority: Optional[int]
     status: str
     address: Optional[str]
     suburb: Optional[str]
@@ -236,6 +237,14 @@ async def get_incidents(
 
     response = []
     for inc in incidents:
+        # Get priority from the first message (original dispatch)
+        priority = None
+        if inc.messages:
+            for msg in inc.messages:
+                if msg.priority is not None:
+                    priority = msg.priority
+                    break
+
         response.append(IncidentResponse(
             id=inc.id,
             unique_id=inc.unique_id,
@@ -243,6 +252,7 @@ async def get_incidents(
             incident_date=inc.incident_date,
             incident_type=inc.incident_type,
             alarm_level=inc.alarm_level,
+            priority=priority,
             status=inc.status,
             address=inc.address,
             suburb=inc.suburb,
@@ -289,6 +299,14 @@ async def get_incident(
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
+    # Get priority from the first message (original dispatch)
+    priority = None
+    if incident.messages:
+        for msg in incident.messages:
+            if msg.priority is not None:
+                priority = msg.priority
+                break
+
     return IncidentResponse(
         id=incident.id,
         unique_id=incident.unique_id,
@@ -296,6 +314,7 @@ async def get_incident(
         incident_date=incident.incident_date,
         incident_type=incident.incident_type,
         alarm_level=incident.alarm_level,
+        priority=priority,
         status=incident.status,
         address=incident.address,
         suburb=incident.suburb,

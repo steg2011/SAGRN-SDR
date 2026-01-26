@@ -19,6 +19,7 @@ export interface Incident {
   incident_date: string;
   incident_type: string | null;
   alarm_level: number | null;
+  priority: number | null;
   status: string;
   address: string | null;
   suburb: string | null;

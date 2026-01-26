@@ -189,6 +189,20 @@ body {
   margin-bottom: 4px;
 }
 
+.priority-badge {
+  font-weight: 700;
+  font-size: 0.85rem;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-right: 6px;
+}
+
+.priority-badge.priority-1 {
+  color: #d32f2f;
+  background: rgba(211, 47, 47, 0.2);
+}
+
 .incident-location {
   font-size: 0.9rem;
   color: #444;
