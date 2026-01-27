@@ -1,14 +1,16 @@
-# SAGRN SDR Monitor
+# SAGRN SDR Monitor (Lightweight Edition)
 
 Emergency services pager monitoring system for South Australia. Monitors the SAGRN (South Australian Government Radio Network) for emergency messages and displays them on a web interface.
+
+**Lightweight Edition** - Optimized for Google Cloud Platform free tier (e2-micro instance).
 
 ## Architecture
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Raspberry Pi   │────▶│  Backend API    │────▶│  Web Frontend   │
-│  (RTL-SDR +     │     │  (FastAPI)      │     │  (React)        │
-│   multimon-ng)  │     │                 │     │                 │
+│  Raspberry Pi   │────▶│  GCP VM         │────▶│  Web Browser    │
+│  (RTL-SDR +     │     │  (FastAPI +     │     │                 │
+│   multimon-ng)  │     │   React Static) │     │                 │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
                                │
                                ▼
@@ -18,7 +20,47 @@ Emergency services pager monitoring system for South Australia. Monitors the SAG
                         └─────────────────┘
 ```
 
-## Quick Start
+## GCP Free Tier Deployment (Recommended)
+
+### One-Command Installation
+
+SSH into your GCP Debian VM and run:
+
+```bash
+# Download and run the installation script
+curl -fsSL https://raw.githubusercontent.com/steg2011/SAGRN-SDR/dev/scripts/install_gcp_debian.sh | sudo bash
+```
+
+Or manually:
+
+```bash
+# Clone repository
+git clone -b dev https://github.com/steg2011/SAGRN-SDR.git /opt/sagrn-sdr
+
+# Run installation script
+cd /opt/sagrn-sdr/scripts
+chmod +x install_gcp_debian.sh
+sudo ./install_gcp_debian.sh
+```
+
+### GCP Firewall Configuration
+
+Create a firewall rule to allow web traffic:
+
+```bash
+gcloud compute firewall-rules create sagrn-web \
+    --allow tcp:8000 \
+    --source-ranges 0.0.0.0/0 \
+    --description "SAGRN SDR Monitor web interface"
+```
+
+### Update to Latest Version
+
+```bash
+sudo /opt/sagrn-sdr/scripts/update_gcp.sh
+```
+
+## Local Development Setup
 
 ### 1. Backend Setup
 
@@ -37,7 +79,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Create data directory
-mkdir data
+mkdir -p data
 
 # Run the server
 python run.py
@@ -45,7 +87,7 @@ python run.py
 
 The API will be available at http://localhost:8000
 
-### 2. Frontend Setup
+### 2. Frontend Setup (Development)
 
 ```bash
 cd frontend
@@ -59,12 +101,14 @@ npm start
 
 The frontend will be available at http://localhost:3000
 
-### 3. Import Historical Logs
+### 3. Frontend Build (Production)
 
 ```bash
-cd scripts
-python import_logs.py ../pager_log.txt
+cd frontend
+npm run build
 ```
+
+The built files will be served automatically by the FastAPI backend.
 
 ### 4. Raspberry Pi Collector Setup
 
@@ -80,7 +124,10 @@ Edit the service configuration:
 sudo nano /etc/systemd/system/sagrn-collector.service
 ```
 
-Update `SAGRN_SERVER_URL` to your server's IP address.
+Update `SAGRN_SERVER_URL` to your GCP VM's external IP address:
+```
+SAGRN_SERVER_URL=http://YOUR_GCP_IP:8000
+```
 
 ## API Endpoints
 
@@ -93,6 +140,7 @@ Update `SAGRN_SERVER_URL` to your server's IP address.
 | `/api/agencies` | GET | Get agency list |
 | `/api/stats` | GET | Get dashboard statistics |
 | `/api/health` | GET | Health check |
+| `/api/events` | GET | Server-Sent Events stream |
 
 ## Agency Colors
 
@@ -109,16 +157,26 @@ Update `SAGRN_SERVER_URL` to your server's IP address.
 
 Copy `backend/.env.example` to `backend/.env` and configure:
 
-- `DATABASE_URL` - Database connection string
-- `MESSAGE_RETENTION_DAYS` - Days to keep messages (default: 30)
-- `GEOCODE_RATE_LIMIT` - Nominatim rate limit (default: 1/sec)
+- `DATABASE_URL` - Database connection string (default: SQLite)
+- `MESSAGE_RETENTION_HOURS` - Hours to keep messages (default: 24)
+- `HOST` - Server bind address (default: 0.0.0.0)
+- `PORT` - Server port (default: 8000)
 
 ## Features
 
-- Real-time pager message monitoring
-- Multi-agency support (SAAS, CFS, MFS, SES, MedStar)
-- Automatic geocoding with Nominatim
-- CFS incident feed integration
+- Real-time pager message monitoring via SSE
+- Multi-agency support (SAAS, CFS, MFS, SES, MedStar, TMC)
+- CFS incident feed integration (provides location data)
 - Incident grouping and unit tracking
-- Web interface similar to sapaging.com
-- 30-day message retention
+- Web interface with agency filtering
+- Raw message view mode
+- 24-hour message retention (lightweight operation)
+- Single-server deployment (FastAPI serves React static files)
+
+## Lightweight Changes (vs Original)
+
+- Removed Nominatim geocoding (uses CFS feed for location data)
+- Reduced message retention from 30 days to 24 hours
+- Single worker process for low memory usage
+- Frontend bundled and served by backend
+- Optimized for GCP e2-micro (1GB RAM, 0.25 vCPU)

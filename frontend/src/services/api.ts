@@ -1,13 +1,23 @@
 import { Incident, Agency, Stats, RawMessage } from '../types';
 
-// Dynamically determine API URL based on current host (for accessing from other devices)
+// Dynamically determine API URL based on current host
 const getApiBase = (): string => {
+  // Allow override via environment variable
   if (process.env.REACT_APP_API_URL) {
     return process.env.REACT_APP_API_URL;
   }
-  // Use the same hostname the page was loaded from, with backend port 8000
-  const host = window.location.hostname;
-  return `http://${host}:8000/api`;
+
+  // In production (served from same server), use relative URL
+  // In development (separate React dev server), use backend port 8000
+  const { protocol, hostname, port } = window.location;
+
+  // If running on port 3000 (React dev server), connect to port 8000
+  if (port === '3000') {
+    return `${protocol}//${hostname}:8000/api`;
+  }
+
+  // Otherwise, use same origin (production mode - frontend served by FastAPI)
+  return '/api';
 };
 
 const API_BASE = getApiBase();

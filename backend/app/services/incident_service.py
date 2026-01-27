@@ -268,10 +268,26 @@ class IncidentService:
     async def cleanup_old_messages(
         self,
         db: AsyncSession,
-        days: int = 30
+        hours: int = 24,
+        days: int = None
     ):
-        """Delete messages older than N days"""
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        """Delete messages older than N hours (default 24 hours for lightweight operation)"""
+        # Support both hours and days for backwards compatibility
+        if days is not None:
+            cutoff = datetime.utcnow() - timedelta(days=days)
+        else:
+            cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+        # Delete old incident units first (foreign key constraint)
+        old_incidents = await db.execute(
+            select(Incident.id).where(Incident.incident_date < cutoff)
+        )
+        old_incident_ids = [row[0] for row in old_incidents.fetchall()]
+
+        if old_incident_ids:
+            await db.execute(
+                delete(IncidentUnit).where(IncidentUnit.incident_id.in_(old_incident_ids))
+            )
 
         # Delete old messages
         await db.execute(

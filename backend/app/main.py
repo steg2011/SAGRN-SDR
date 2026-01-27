@@ -1,14 +1,17 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from fastapi import FastAPI
+from pathlib import Path
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.models.database import init_db, async_session
 from app.api.routes import router
 from app.services.incident_service import IncidentService
-from app.services.geocoder import GeocoderService, BackgroundGeocoder
 from app.services.cfs_integration import CFSIntegrationService
 from app.core.config import get_settings
 
@@ -17,7 +20,6 @@ scheduler = AsyncIOScheduler()
 
 # Services
 incident_service = IncidentService()
-geocoder_service = GeocoderService()
 cfs_service = CFSIntegrationService()
 
 
@@ -34,37 +36,17 @@ async def startup_tasks():
 
 
 async def cleanup_old_data():
-    """Scheduled task to clean up old data"""
+    """Scheduled task to clean up old data (24 hour retention)"""
     async with async_session() as db:
-        await incident_service.cleanup_old_messages(db, days=settings.message_retention_days)
-    print(f"Cleaned up messages older than {settings.message_retention_days} days")
+        await incident_service.cleanup_old_messages(db, hours=settings.message_retention_hours)
+    print(f"Cleaned up messages older than {settings.message_retention_hours} hours")
 
 
 async def fetch_cfs_incidents():
-    """Scheduled task to fetch CFS incident updates"""
+    """Scheduled task to fetch CFS incident updates (provides location data)"""
     async with async_session() as db:
         await cfs_service.update_incidents(db)
     print("CFS incidents updated")
-
-
-async def geocode_pending():
-    """Scheduled task to geocode pending addresses"""
-    async with async_session() as db:
-        from sqlalchemy import select
-        from app.models.models import Incident
-
-        # Get one pending incident
-        result = await db.execute(
-            select(Incident)
-            .where(Incident.geocode_attempted == False)
-            .where(Incident.address.isnot(None))
-            .order_by(Incident.created_at.desc())
-            .limit(1)
-        )
-        incident = result.scalar_one_or_none()
-
-        if incident:
-            await geocoder_service.geocode_incident(db, incident)
 
 
 @asynccontextmanager
@@ -73,13 +55,12 @@ async def lifespan(app: FastAPI):
     # Startup
     await startup_tasks()
 
-    # Schedule periodic tasks
-    scheduler.add_job(cleanup_old_data, 'interval', hours=6)
+    # Schedule periodic tasks (optimized for lightweight operation)
+    scheduler.add_job(cleanup_old_data, 'interval', hours=1)  # More frequent cleanup for 24hr retention
     scheduler.add_job(fetch_cfs_incidents, 'interval', minutes=5)
-    scheduler.add_job(geocode_pending, 'interval', seconds=2)  # 1 per 2 seconds for rate limit
     scheduler.start()
 
-    print("SAGRN SDR Monitor started")
+    print("SAGRN SDR Monitor started (Lightweight GCP Edition)")
 
     yield
 
@@ -91,15 +72,15 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(
     title="SAGRN SDR Monitor",
-    description="Emergency services pager monitoring system for South Australia",
-    version="1.0.0",
+    description="Emergency services pager monitoring system for South Australia (Lightweight)",
+    version="2.0.0",
     lifespan=lifespan
 )
 
-# CORS middleware for frontend
+# CORS middleware for frontend (needed for development, static serving handles production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -108,17 +89,53 @@ app.add_middleware(
 # Include API routes
 app.include_router(router, prefix="/api")
 
+# Serve static frontend files if build directory exists
+static_path = Path(settings.static_dir)
+if static_path.exists() and static_path.is_dir():
+    # Mount static files (CSS, JS, etc.)
+    app.mount("/static", StaticFiles(directory=str(static_path / "static")), name="static")
 
-# Root endpoint
+    # Serve index.html for all non-API routes (SPA routing)
+    @app.get("/{full_path:path}")
+    async def serve_spa(request: Request, full_path: str):
+        # Don't intercept API calls
+        if full_path.startswith("api/"):
+            return None
+
+        # Check if it's a file that exists
+        file_path = static_path / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(str(file_path))
+
+        # Otherwise serve index.html for SPA routing
+        index_path = static_path / "index.html"
+        if index_path.exists():
+            return FileResponse(str(index_path))
+
+        return {"error": "Frontend not built. Run: cd frontend && npm run build"}
+
+
+# Root endpoint (fallback if no static files)
 @app.get("/")
 async def root():
+    # Check if frontend is built
+    index_path = static_path / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path))
+
     return {
-        "name": "SAGRN SDR Monitor",
+        "name": "SAGRN SDR Monitor (Lightweight)",
         "status": "running",
+        "message": "Frontend not built. Run: cd frontend && npm run build",
         "timestamp": datetime.utcnow().isoformat()
     }
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        app,
+        host=settings.host,
+        port=settings.port,
+        workers=settings.workers
+    )
