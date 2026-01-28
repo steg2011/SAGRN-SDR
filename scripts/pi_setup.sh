@@ -30,9 +30,10 @@ sudo apt-get install -y \
     python3-venv \
     git
 
-# Create collector directory
+# Create collector directory and logs folder
 echo "[3/6] Creating collector directory..."
 mkdir -p ~/sagrn-collector
+mkdir -p ~/sagrn-collector/logs
 cd ~/sagrn-collector
 
 # Create Python virtual environment
@@ -55,36 +56,91 @@ import requests
 import sys
 import time
 import os
+import glob
 from datetime import datetime
+from pathlib import Path
 
 # Configuration
-SERVER_URL = os.environ.get('SAGRN_SERVER_URL', 'http://192.168.1.100:8000')
+# Supports multiple server URLs separated by commas
+# e.g., "http://prod:8000,http://dev:8000,http://local:8000"
+SERVER_URLS = os.environ.get('SAGRN_SERVER_URL', 'http://192.168.1.100:8000')
 COLLECTOR_ID = os.environ.get('COLLECTOR_ID', 'pager1')
-FREQUENCY = os.environ.get('PAGER_FREQUENCY', '148.1375M')  # SAGRN pager frequency
+FREQUENCY = os.environ.get('PAGER_FREQUENCY', '148.8125M')  # SAGRN pager frequency
 SAMPLE_RATE = '22050'
 
+# Local logging configuration
+LOG_DIR = os.environ.get('SAGRN_LOG_DIR', os.path.expanduser('~/sagrn-collector/logs'))
+MAX_LOG_SIZE_BYTES = int(os.environ.get('SAGRN_MAX_LOG_SIZE_MB', '2048')) * 1024 * 1024  # Default 2GB
+
+def get_log_dir_size() -> int:
+    """Get total size of all log files in bytes"""
+    total = 0
+    for f in Path(LOG_DIR).glob('*.txt'):
+        total += f.stat().st_size
+    return total
+
+def cleanup_old_logs():
+    """Delete oldest log files until under MAX_LOG_SIZE_BYTES"""
+    while get_log_dir_size() > MAX_LOG_SIZE_BYTES:
+        log_files = sorted(Path(LOG_DIR).glob('*.txt'), key=lambda f: f.stat().st_mtime)
+        if not log_files:
+            break
+        oldest = log_files[0]
+        print(f"[INFO] Deleting old log file: {oldest.name} (storage limit reached)")
+        oldest.unlink()
+
+def log_message_to_file(message: str, timestamp: str):
+    """Write message to daily log file"""
+    Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
+
+    # Check storage before writing
+    cleanup_old_logs()
+
+    # Daily log file: YYYY-MM-DD.txt
+    date_str = datetime.now().strftime('%Y-%m-%d')
+    log_file = Path(LOG_DIR) / f'{date_str}.txt'
+
+    with open(log_file, 'a', encoding='utf-8') as f:
+        f.write(f'{timestamp}|{message}\n')
+
 def send_message(message: str) -> bool:
-    """Send a message to the central server"""
-    try:
-        response = requests.post(
-            f'{SERVER_URL}/api/collector/message',
-            json={
-                'message': message,
-                'collector_id': COLLECTOR_ID,
-                'timestamp': datetime.utcnow().isoformat()
-            },
-            timeout=5
-        )
-        return response.status_code == 200
-    except requests.RequestException as e:
-        print(f"[ERROR] Failed to send message: {e}", file=sys.stderr)
-        return False
+    """Send a message to all configured servers"""
+    urls = [url.strip() for url in SERVER_URLS.split(',') if url.strip()]
+    any_success = False
+
+    for server_url in urls:
+        try:
+            response = requests.post(
+                f'{server_url}/api/collector/message',
+                json={
+                    'message': message,
+                    'collector_id': COLLECTOR_ID,
+                    'timestamp': datetime.utcnow().isoformat()
+                },
+                timeout=5
+            )
+            if response.status_code == 200:
+                any_success = True
+            else:
+                print(f"[WARN] {server_url} returned {response.status_code}", file=sys.stderr)
+        except requests.RequestException as e:
+            print(f"[ERROR] Failed to send to {server_url}: {e}", file=sys.stderr)
+
+    return any_success
 
 def run_collector():
     """Run the SDR collector pipeline"""
+    urls = [url.strip() for url in SERVER_URLS.split(',') if url.strip()]
     print(f"[INFO] Starting SAGRN collector '{COLLECTOR_ID}'")
-    print(f"[INFO] Server: {SERVER_URL}")
+    print(f"[INFO] Sending to {len(urls)} server(s):")
+    for url in urls:
+        print(f"[INFO]   - {url}")
     print(f"[INFO] Frequency: {FREQUENCY}")
+    print(f"[INFO] Log directory: {LOG_DIR}")
+    print(f"[INFO] Max log storage: {MAX_LOG_SIZE_BYTES // (1024*1024)} MB")
+
+    # Ensure log directory exists
+    Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
 
     # RTL-SDR -> multimon-ng pipeline
     rtl_cmd = [
@@ -143,10 +199,16 @@ def run_collector():
             message_count += 1
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            # Log locally
+            # Log to console
             print(f"[{timestamp}] {line}")
 
-            # Send to server
+            # Log to daily file
+            try:
+                log_message_to_file(line, timestamp)
+            except Exception as e:
+                print(f"[WARN] Failed to write to log file: {e}", file=sys.stderr)
+
+            # Send to server(s)
             if send_message(line):
                 print(f"[OK] Message {message_count} sent")
             else:
@@ -175,9 +237,13 @@ After=network.target
 [Service]
 Type=simple
 User=$CURRENT_USER
+# Multiple servers supported: comma-separated URLs (e.g., http://prod:8000,http://dev:8000)
 Environment=SAGRN_SERVER_URL=http://192.168.1.100:8000
 Environment=COLLECTOR_ID=pager1
-Environment=PAGER_FREQUENCY=148.1375M
+Environment=PAGER_FREQUENCY=148.8125M
+# Local message logging (daily files, auto-cleanup when limit reached)
+Environment=SAGRN_LOG_DIR=$USER_HOME/sagrn-collector/logs
+Environment=SAGRN_MAX_LOG_SIZE_MB=2048
 WorkingDirectory=$USER_HOME/sagrn-collector
 ExecStart=$USER_HOME/sagrn-collector/venv/bin/python $USER_HOME/sagrn-collector/collector.py
 Restart=always
@@ -195,6 +261,8 @@ echo ""
 echo "Next steps:"
 echo "1. Edit /etc/systemd/system/sagrn-collector.service"
 echo "   - Update SAGRN_SERVER_URL to your server's IP"
+echo "   - For multiple servers, use comma-separated URLs:"
+echo "     SAGRN_SERVER_URL=http://prod:8000,http://dev:8000"
 echo "   - Update PAGER_FREQUENCY if different"
 echo ""
 echo "2. Start the service:"
@@ -205,4 +273,9 @@ echo ""
 echo "3. Check status:"
 echo "   sudo systemctl status sagrn-collector"
 echo "   journalctl -u sagrn-collector -f"
+echo ""
+echo "4. Local message logs:"
+echo "   - Stored in: ~/sagrn-collector/logs/"
+echo "   - Daily files: YYYY-MM-DD.txt"
+echo "   - Auto-cleanup when exceeding 2GB (configurable via SAGRN_MAX_LOG_SIZE_MB)"
 echo ""

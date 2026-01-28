@@ -23,7 +23,7 @@ APP_NAME="sagrn-sdr"
 APP_USER="sagrn"
 APP_DIR="/opt/sagrn-sdr"
 REPO_URL="https://github.com/steg2011/SAGRN-SDR.git"
-BRANCH="dev"
+BRANCH="main"
 PORT=8000
 
 # Colors for output

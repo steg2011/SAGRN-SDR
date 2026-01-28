@@ -27,15 +27,15 @@ Emergency services pager monitoring system for South Australia. Monitors the SAG
 SSH into your GCP Debian VM and run:
 
 ```bash
-# Download and run the installation script
-curl -fsSL https://raw.githubusercontent.com/steg2011/SAGRN-SDR/dev/scripts/install_gcp_debian.sh | sudo bash
+# Download and run the installation script (uses main branch for production)
+curl -fsSL https://raw.githubusercontent.com/steg2011/SAGRN-SDR/main/scripts/install_gcp_debian.sh | sudo bash
 ```
 
 Or manually:
 
 ```bash
-# Clone repository
-git clone -b dev https://github.com/steg2011/SAGRN-SDR.git /opt/sagrn-sdr
+# Clone repository (main branch for production)
+git clone https://github.com/steg2011/SAGRN-SDR.git /opt/sagrn-sdr
 
 # Run installation script
 cd /opt/sagrn-sdr/scripts

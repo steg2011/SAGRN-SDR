@@ -10,7 +10,7 @@ set -e
 
 APP_DIR="/opt/sagrn-sdr"
 APP_USER="sagrn"
-BRANCH="dev"
+BRANCH="main"
 
 # Colors
 GREEN='\033[0;32m'
