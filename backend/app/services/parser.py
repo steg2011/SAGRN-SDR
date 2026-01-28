@@ -285,6 +285,9 @@ class MessageParser:
                 parsed.location_text = ses_match.group(6).strip()
                 parsed.map_reference = ses_match.group(7).strip()
 
+                # Extract suburb from location text
+                parsed.suburb = self.suburb_matcher.extract_suburb_from_text(parsed.location_text)
+
                 # Extract units paged
                 units_match = re.search(r':([A-Z0-9_\s]+):$', content)
                 if units_match:
@@ -312,6 +315,9 @@ class MessageParser:
             parsed.location_text = ses_cfs_match.group(7).strip()
             parsed.map_reference = ses_cfs_match.group(8).strip()
 
+            # Extract suburb from location text for fire incidents
+            parsed.suburb = self.suburb_matcher.extract_suburb_from_text(parsed.location_text)
+
             # Extract units paged
             units_match = re.search(r':([A-Z0-9_\s]+):$', content)
             if units_match:
@@ -331,6 +337,9 @@ class MessageParser:
             parsed.alarm_level = int(cfs_match.group(6)) if cfs_match.group(6) else 1
             parsed.location_text = cfs_match.group(7).strip()
             parsed.map_reference = cfs_match.group(8).strip()
+
+            # Extract suburb from location text for fire incidents
+            parsed.suburb = self.suburb_matcher.extract_suburb_from_text(parsed.location_text)
 
             # Extract units paged
             units_match = re.search(r':([A-Z0-9_\s]+):$', content)
@@ -506,6 +515,9 @@ class MessageParser:
                 parsed.location_text = notif_ses_match.group(7).strip()
                 parsed.map_reference = notif_ses_match.group(8).strip()
 
+                # Extract suburb from location text
+                parsed.suburb = self.suburb_matcher.extract_suburb_from_text(parsed.location_text)
+
                 # Extract units paged
                 units_match = re.search(r':([A-Z0-9_\s]+):$', notification_content)
                 if units_match:
@@ -523,6 +535,9 @@ class MessageParser:
                 parsed.alarm_level = int(notif_match.group(6)) if notif_match.group(6) else 1
                 parsed.location_text = notif_match.group(7).strip()
                 parsed.map_reference = notif_match.group(8).strip()
+
+                # Extract suburb from location text
+                parsed.suburb = self.suburb_matcher.extract_suburb_from_text(parsed.location_text)
 
                 # Extract units paged
                 units_match = re.search(r':([A-Z0-9_\s]+):$', notification_content)
@@ -545,6 +560,17 @@ class MessageParser:
         # Check for "DISREGARD" or similar
         if 'DISREGARD' in content.upper():
             parsed.message_type = 'disregard'
+            return parsed
+
+        # Check for TMC (Traffic Management Centre) - broad case-insensitive search
+        if 'TMC' in content.upper():
+            parsed.agency = 'TMC'
+            parsed.message_type = 'dispatch'
+            # Generate incident number from timestamp for TMC messages
+            parsed.incident_number = f"TMC{parsed.timestamp.strftime('%H%M%S')}"
+            # Store full message content as location (no structured data for TMC)
+            parsed.location_text = content
+            parsed.incident_type = 'Traffic Management Centre'
             return parsed
 
         # Generic/unknown message
