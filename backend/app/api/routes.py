@@ -418,7 +418,9 @@ async def get_agencies(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Agency))
     agencies = result.scalars().all()
 
-    return [{"code": a.code, "name": a.name, "color": a.color} for a in agencies]
+    # Filter out MedStar and UNKNOWN agencies
+    excluded = {'MedStar', 'UNKNOWN'}
+    return [{"code": a.code, "name": a.name, "color": a.color} for a in agencies if a.code not in excluded]
 
 
 @router.get("/stats", response_model=StatsResponse)

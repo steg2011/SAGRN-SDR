@@ -13,6 +13,7 @@ from app.models.database import init_db, async_session
 from app.api.routes import router
 from app.services.incident_service import IncidentService
 from app.services.cfs_integration import CFSIntegrationService
+from app.services.waze_service import get_waze_service
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -21,6 +22,7 @@ scheduler = AsyncIOScheduler()
 # Services
 incident_service = IncidentService()
 cfs_service = CFSIntegrationService()
+waze_service = get_waze_service()
 
 
 async def startup_tasks():
@@ -49,6 +51,16 @@ async def fetch_cfs_incidents():
     print("CFS incidents updated")
 
 
+async def fetch_waze_incidents():
+    """Scheduled task to fetch Waze traffic incidents (every 2 minutes)"""
+    async with async_session() as db:
+        new_count = await waze_service.process_alerts(db)
+        if new_count > 0:
+            print(f"Waze: {new_count} new traffic incidents")
+        # Also cleanup stale incidents
+        await waze_service.cleanup_old_alerts(db)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler"""
@@ -58,7 +70,11 @@ async def lifespan(app: FastAPI):
     # Schedule periodic tasks (optimized for lightweight operation)
     scheduler.add_job(cleanup_old_data, 'interval', hours=1)  # More frequent cleanup for 24hr retention
     scheduler.add_job(fetch_cfs_incidents, 'interval', minutes=5)
+    scheduler.add_job(fetch_waze_incidents, 'interval', minutes=2)  # Waze updates every 2 minutes
     scheduler.start()
+
+    # Run initial Waze fetch
+    await fetch_waze_incidents()
 
     print("SAGRN SDR Monitor started (Lightweight GCP Edition)")
 

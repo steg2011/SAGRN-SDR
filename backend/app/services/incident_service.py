@@ -19,6 +19,7 @@ class IncidentService:
         'SES': {'name': 'State Emergency Service', 'color': '#FFCCBC'},  # Light orange
         'MedStar': {'name': 'MedSTAR', 'color': '#E1BEE7'},  # Light purple
         'TMC': {'name': 'Transport Management Centre', 'color': '#B3E5FC'},  # Light blue
+        'WAZE': {'name': 'Waze Traffic', 'color': '#B2EBF2'},  # Light cyan
         'UNKNOWN': {'name': 'Unknown', 'color': '#E0E0E0'},  # Light gray
     }
 
@@ -161,12 +162,19 @@ class IncidentService:
             return incident
 
         # Create new incident
-        # Build address from location_text and suburb
+        # Build address from location_text, removing suburb if present
         address = None
         if parsed.location_text:
             address = parsed.location_text
-            if parsed.suburb and parsed.suburb not in parsed.location_text:
-                address = f"{parsed.location_text}, {parsed.suburb}"
+            # If we have a suburb, remove it from the address to get just the street
+            if parsed.suburb and parsed.suburb in parsed.location_text:
+                # Remove suburb from end of address
+                address = parsed.location_text.replace(parsed.suburb, '').strip()
+                # Clean up any trailing/leading punctuation or whitespace
+                address = address.rstrip(',').strip()
+                # If address is empty after removing suburb, set to None
+                if not address:
+                    address = None
 
         incident = Incident(
             unique_id=unique_id,

@@ -69,7 +69,9 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({ incident, isNew, onC
       </div>
 
       <div className="incident-location">
-        {incident.suburb || incident.address || 'Location unavailable'}
+        {incident.address && <div>{incident.address}</div>}
+        {incident.suburb && <div>{incident.suburb}</div>}
+        {!incident.address && !incident.suburb && <div>Location unavailable</div>}
       </div>
 
       <div className="incident-footer">

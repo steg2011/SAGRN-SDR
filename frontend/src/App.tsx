@@ -197,15 +197,12 @@ function App() {
     <div className="app">
       <header className="app-header">
         <div className="header-left">
-          <h1>SAGRN SDR Monitor</h1>
+          <h1>SAGRN Pager Feed</h1>
           <span className="subtitle">South Australia Emergency Services</span>
         </div>
         <div className="header-right">
           {stats && (
             <div className="stats">
-              <span className="stat">
-                <strong>{stats.active_incidents}</strong> active
-              </span>
               <span className="stat">
                 <strong>{stats.total_incidents_24h}</strong> today
               </span>
