@@ -5,10 +5,13 @@ import { IncidentCard } from './components/IncidentCard';
 import { IncidentDetail } from './components/IncidentDetail';
 import { AgencyFilter } from './components/AgencyFilter';
 import { RawMessageCard } from './components/RawMessageCard';
+import { SearchBar } from './components/SearchBar';
 import './App.css';
 
 const FALLBACK_REFRESH_INTERVAL = 30000; // 30 seconds fallback polling (SSE is primary)
 const NEW_INCIDENT_DURATION = 30000; // How long to show "new" highlight (30 seconds)
+const INITIAL_LOAD = 20; // Initial incidents to display
+const LOAD_MORE_INCREMENT = 20; // Incidents to load per "Load More" click
 
 function App() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -23,6 +26,9 @@ function App() {
   const [rawMode, setRawMode] = useState(false);
   const [rawMessages, setRawMessages] = useState<RawMessage[]>([]);
   const [newRawMessageIds, setNewRawMessageIds] = useState<Set<number>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [displayLimit, setDisplayLimit] = useState(INITIAL_LOAD);
+  const [pollerOffline, setPollerOffline] = useState(false);
 
   // Track which incidents we've seen (persists across renders)
   const seenIncidentIds = useRef<Set<number>>(new Set());
@@ -178,12 +184,51 @@ function App() {
       }
       return next;
     });
+    // Reset display limit when filter changes
+    setDisplayLimit(INITIAL_LOAD);
   };
 
+  // Reset display limit when search query changes
+  useEffect(() => {
+    setDisplayLimit(INITIAL_LOAD);
+  }, [searchQuery]);
+
+  // Monitor poller health - check if no updates received in 1 hour
+  useEffect(() => {
+    const checkHealth = () => {
+      const timeSinceUpdate = Date.now() - lastUpdate.getTime();
+      const oneHourMs = 3600000; // 1 hour in milliseconds
+      setPollerOffline(timeSinceUpdate > oneHourMs);
+    };
+
+    checkHealth();
+    const interval = setInterval(checkHealth, 60000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, [lastUpdate]);
+
   // Filter incidents based on selected agencies (empty = show all)
-  const filteredIncidents = selectedAgencies.size === 0
+  const agencyFilteredIncidents = selectedAgencies.size === 0
     ? incidents
     : incidents.filter((inc) => inc.agency_code && selectedAgencies.has(inc.agency_code));
+
+  // Filter incidents based on search query
+  const filteredIncidents = searchQuery.trim() === ''
+    ? agencyFilteredIncidents
+    : agencyFilteredIncidents.filter((inc) => {
+        const q = searchQuery.toLowerCase();
+        return (
+          inc.incident_type?.toLowerCase().includes(q) ||
+          inc.address?.toLowerCase().includes(q) ||
+          inc.suburb?.toLowerCase().includes(q) ||
+          inc.incident_number?.toLowerCase().includes(q) ||
+          inc.units.some(u => u.callsign.toLowerCase().includes(q))
+        );
+      });
+
+  // Apply display limit for lazy loading
+  const visibleIncidents = filteredIncidents.slice(0, displayLimit);
+  const hasMore = filteredIncidents.length > displayLimit;
 
   if (loading && incidents.length === 0) {
     return (
@@ -221,15 +266,28 @@ function App() {
           onToggle={handleAgencyToggle}
           disabled={rawMode}
         />
+        <SearchBar
+          value={searchQuery}
+          onChange={setSearchQuery}
+          disabled={rawMode}
+        />
         <button
           className={`raw-btn ${rawMode ? 'active' : ''}`}
-          onClick={() => setRawMode(!rawMode)}
+          onClick={() => {
+            setRawMode(!rawMode);
+            setDisplayLimit(INITIAL_LOAD);
+          }}
         >
           RAW
         </button>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
+      {pollerOffline && (
+        <div className="health-warning">
+          ⚠️ Poller Offline - No updates received in over 1 hour
+        </div>
+      )}
 
       {rawMode ? (
         <main className="raw-message-list">
@@ -248,22 +306,34 @@ function App() {
           )}
         </main>
       ) : (
-        <main className="incident-list">
-          {filteredIncidents.length === 0 ? (
-            <div className="no-incidents">
-              No incidents found for the selected filter.
+        <div>
+          <main className="incident-list">
+            {filteredIncidents.length === 0 ? (
+              <div className="no-incidents">
+                No incidents found for the selected filter.
+              </div>
+            ) : (
+              visibleIncidents.map((incident) => (
+                <IncidentCard
+                  key={incident.id}
+                  incident={incident}
+                  isNew={newIncidentIds.has(incident.id)}
+                  onClick={() => setSelectedIncident(incident)}
+                />
+              ))
+            )}
+          </main>
+          {hasMore && (
+            <div className="load-more-container">
+              <button
+                className="load-more-btn"
+                onClick={() => setDisplayLimit(prev => prev + LOAD_MORE_INCREMENT)}
+              >
+                Load More ({filteredIncidents.length - displayLimit} remaining)
+              </button>
             </div>
-          ) : (
-            filteredIncidents.map((incident) => (
-              <IncidentCard
-                key={incident.id}
-                incident={incident}
-                isNew={newIncidentIds.has(incident.id)}
-                onClick={() => setSelectedIncident(incident)}
-              />
-            ))
           )}
-        </main>
+        </div>
       )}
 
       {selectedIncident && (

@@ -47,6 +47,10 @@ function formatAdelaideDateTime(dateString: string): string {
   });
 }
 
+function isMedstarUnit(callsign: string): boolean {
+  return /^MS\d+$/i.test(callsign);
+}
+
 export const IncidentCard: React.FC<IncidentCardProps> = ({ incident, isNew, onClick }) => {
   const bgColor = incident.agency_color || '#E0E0E0';
 
@@ -76,10 +80,18 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({ incident, isNew, onC
 
       <div className="incident-footer">
         <div className="incident-units">
-          {incident.units.slice(0, 3).map((unit, i) => (
-            <span key={i} className="unit-badge">{unit.callsign}</span>
-          ))}
-          {incident.units.length > 3 && (
+          {incident.units
+            .filter(u => isMedstarUnit(u.callsign))
+            .map((unit, i) => (
+              <span key={`ms-${i}`} className="unit-badge unit-medstar">{unit.callsign}</span>
+            ))}
+          {incident.units
+            .filter(u => !isMedstarUnit(u.callsign))
+            .slice(0, 3 - incident.units.filter(u => isMedstarUnit(u.callsign)).length)
+            .map((unit, i) => (
+              <span key={`unit-${i}`} className="unit-badge">{unit.callsign}</span>
+            ))}
+          {incident.units.length > (3 + incident.units.filter(u => isMedstarUnit(u.callsign)).length) && (
             <span className="unit-badge">+{incident.units.length - 3}</span>
           )}
         </div>

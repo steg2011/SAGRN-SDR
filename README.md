@@ -164,14 +164,26 @@ Copy `backend/.env.example` to `backend/.env` and configure:
 
 ## Features
 
-- Real-time pager message monitoring via SSE
-- Multi-agency support (SAAS, CFS, MFS, SES, MedStar, TMC)
+### Core Features
+- Real-time pager message monitoring via Server-Sent Events (SSE)
+- Multi-agency support (SAAS, CFS, MFS, SES, MedStar, TMC, WAZE)
 - CFS incident feed integration (provides location data)
+- Waze traffic incident integration with automatic deduplication
 - Incident grouping and unit tracking
 - Web interface with agency filtering
-- Raw message view mode
+- Raw message view mode for debugging
 - 24-hour message retention (lightweight operation)
 - Single-server deployment (FastAPI serves React static files)
+
+### Recent Enhancements (v2.0)
+- **Smart Time Handling**: Statistics and cleanup now use Adelaide timezone (UTC+9:30/+10:30) instead of UTC
+- **Efficient Lazy Loading**: Initial page load shows 20 incidents, "Load More" button loads additional batches for responsive UI
+- **Optimized Grid Layout**: Cards reduced from 3-4 per row to 5-6 cards for better space efficiency
+- **Full-Text Search**: Search incidents by type, location, job ID, or assigned unit callsigns with debouncing
+- **Poller Health Monitoring**: Displays warning banner if no updates received within 1 hour
+- **Suburb-Only Location Links**: SAAS incidents without exact address now link to suburb-level Google Maps
+- **Waze Deduplication**: Automatically removes duplicate Waze incidents (same type within 200m using Haversine distance)
+- **Medstar Unit Highlighting**: MS## (helicopter) units displayed with red styling and glow effect for visibility
 
 ## Lightweight Changes (vs Original)
 
