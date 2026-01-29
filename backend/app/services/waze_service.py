@@ -7,6 +7,7 @@ incidents in the database for display on the frontend.
 
 from datetime import datetime
 from typing import List, Dict, Optional, Set
+import math
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,32 @@ WAZE_FEED_URL = "https://www.waze.com/row-partnerhub-api/partners/11378695718/wa
 
 # Event types to exclude
 EXCLUDED_TYPES = {'ROAD_CLOSED'}
+
+
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Calculate distance between two points in meters using Haversine formula.
+
+    Args:
+        lat1, lon1: Latitude and longitude of first point
+        lat2, lon2: Latitude and longitude of second point
+
+    Returns:
+        float: Distance in meters
+    """
+    R = 6371000  # Earth radius in meters
+
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+
+    a = (math.sin(delta_phi / 2) ** 2 +
+         math.cos(phi1) * math.cos(phi2) *
+         math.sin(delta_lambda / 2) ** 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    return R * c
 
 
 class WazeService:
@@ -88,7 +115,8 @@ class WazeService:
 
     async def process_alerts(self, db: AsyncSession) -> int:
         """
-        Fetch Waze alerts and create/update incidents.
+        Fetch Waze alerts and create/update incidents with deduplication.
+        Skips incidents that are the same type and within 200m of existing incidents.
         Returns number of new incidents created.
         """
         alerts = await self.fetch_alerts()
@@ -106,6 +134,15 @@ class WazeService:
             print("WAZE agency not found in database")
             return 0
 
+        # Fetch existing active Waze incidents for deduplication
+        result = await db.execute(
+            select(Incident).where(
+                Incident.agency_id == waze_agency.id,
+                Incident.status == 'active'
+            )
+        )
+        existing_incidents = result.scalars().all()
+
         new_count = 0
         event_manager = get_event_manager()
 
@@ -118,14 +155,8 @@ class WazeService:
                 pub_millis = alert.get('pubMillis', 0)
                 unique_id = self.generate_unique_id(uuid, pub_millis)
 
-                # Check if incident already exists
-                result = await db.execute(
-                    select(Incident).where(Incident.unique_id == unique_id)
-                )
-                existing = result.scalar_one_or_none()
-
-                if existing:
-                    # Update existing incident if needed
+                # Check if exact incident already exists by unique_id
+                if any(inc.unique_id == unique_id for inc in existing_incidents):
                     continue
 
                 # Extract location
@@ -144,6 +175,32 @@ class WazeService:
                 event_type = alert.get('type', '')
                 subtype = alert.get('subtype', '')
                 incident_type = self.normalize_type(event_type, subtype)
+
+                # Check for duplicates within 200m of same type
+                if latitude and longitude:
+                    is_duplicate = False
+                    for existing in existing_incidents:
+                        # Must have coordinates
+                        if not (existing.latitude and existing.longitude):
+                            continue
+
+                        # Must be same incident type
+                        if existing.incident_type != incident_type:
+                            continue
+
+                        # Check distance
+                        distance = haversine_distance(
+                            latitude, longitude,
+                            existing.latitude, existing.longitude
+                        )
+
+                        if distance <= 200:  # Within 200 meters
+                            is_duplicate = True
+                            print(f"Waze: Skipping duplicate {incident_type} at {distance:.0f}m from existing")
+                            break
+
+                    if is_duplicate:
+                        continue
 
                 # Create incident timestamp
                 incident_date = datetime.fromtimestamp(pub_millis / 1000) if pub_millis else datetime.utcnow()
@@ -165,6 +222,7 @@ class WazeService:
                 )
 
                 db.add(incident)
+                existing_incidents.append(incident)  # Add to local list for next iteration
                 new_count += 1
 
                 # Track this UUID

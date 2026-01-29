@@ -34,7 +34,9 @@ export const IncidentDetail: React.FC<IncidentDetailProps> = ({ incident, onClos
     ? `https://www.google.com/maps/search/?api=1&query=${incident.latitude},${incident.longitude}`
     : incident.address
       ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(incident.address + ', South Australia')}`
-      : null;
+      : incident.suburb
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(incident.suburb + ', South Australia')}`
+        : null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>

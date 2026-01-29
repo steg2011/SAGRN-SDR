@@ -426,10 +426,9 @@ async def get_agencies(db: AsyncSession = Depends(get_db)):
 @router.get("/stats", response_model=StatsResponse)
 async def get_stats(db: AsyncSession = Depends(get_db)):
     """Get dashboard statistics"""
-    from datetime import timedelta
+    from app.utils.timezone import get_adelaide_midnight_utc
 
-    now = datetime.utcnow()
-    cutoff_24h = now - timedelta(hours=24)
+    cutoff_24h = get_adelaide_midnight_utc()
 
     # Count incidents in last 24 hours
     result = await db.execute(
