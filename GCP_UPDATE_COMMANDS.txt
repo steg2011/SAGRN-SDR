@@ -1,0 +1,260 @@
+================================================================================
+SAGRN SDR v2.0 UPDATE COMMANDS FOR GCP DEPLOYMENTS
+================================================================================
+
+RELEASE: v2.0 (2026-01-29)
+STATUS: Production Ready (main branch)
+TAG: v2.0
+
+================================================================================
+OPTION 1: QUICK UPDATE (Single Command)
+================================================================================
+
+Run this if your GCP VM already has the update script:
+
+    sudo /opt/sagrn-sdr/scripts/update_gcp.sh
+
+
+================================================================================
+OPTION 2: MANUAL UPDATE (Copy & Paste All Commands)
+================================================================================
+
+# SSH into your GCP Debian VM
+gcloud compute ssh sagrn-vm --zone=YOUR_ZONE
+
+# Update system packages (optional)
+sudo apt update && sudo apt upgrade -y
+
+# Navigate to SAGRN directory
+cd /opt/sagrn-sdr
+
+# Fetch latest from GitHub (main branch = production)
+sudo git fetch origin main
+
+# Switch to main branch (production)
+sudo git checkout main
+
+# Pull latest changes
+sudo git pull origin main
+
+# VERIFY you have v2.0
+sudo git describe --tags
+
+# Navigate to frontend directory
+cd frontend
+
+# Install npm dependencies
+npm install
+
+# Build production bundle
+npm run build
+
+# Return to main directory
+cd ..
+
+# Restart SAGRN service
+sudo systemctl restart sagrn-sdr
+
+# Check service status (should show "active (running)")
+sudo systemctl status sagrn-sdr
+
+# View last 20 lines of logs
+sudo journalctl -u sagrn-sdr -n 20
+
+
+================================================================================
+OPTION 3: FULL UPDATE WITH VERIFICATION
+================================================================================
+
+Run these commands in order and check output after each step:
+
+# 1. SSH into GCP VM
+gcloud compute ssh sagrn-vm --zone=YOUR_ZONE
+
+# 2. Check current version
+cd /opt/sagrn-sdr
+echo "Current version:"
+git describe --tags
+
+# 3. Update system packages
+echo "Updating system packages..."
+sudo apt update
+sudo apt upgrade -y
+
+# 4. Fetch latest code
+echo "Fetching latest from GitHub..."
+cd /opt/sagrn-sdr
+sudo git fetch origin main
+
+# 5. Switch to main branch
+echo "Switching to main branch (production)..."
+sudo git checkout main
+
+# 6. Pull latest changes
+echo "Pulling latest changes..."
+sudo git pull origin main
+
+# 7. Verify version is v2.0
+echo "Verifying version..."
+git describe --tags
+
+# 8. Build frontend
+echo "Building React frontend (this takes 1-2 minutes)..."
+cd frontend
+npm install
+npm run build
+
+# 9. Return to main directory
+cd /opt/sagrn-sdr
+
+# 10. Stop the service
+echo "Stopping SAGRN service..."
+sudo systemctl stop sagrn-sdr
+
+# 11. Restart the service
+echo "Starting SAGRN service..."
+sudo systemctl restart sagrn-sdr
+
+# 12. Wait 5 seconds for service to fully start
+sleep 5
+
+# 13. Verify service is running
+echo "Service status:"
+sudo systemctl status sagrn-sdr
+
+# 14. Check for any errors in logs
+echo "Last 20 log entries:"
+sudo journalctl -u sagrn-sdr -n 20
+
+
+================================================================================
+VERIFICATION CHECKLIST
+================================================================================
+
+After updating, verify these in your browser at http://YOUR_GCP_IP:8000:
+
+□ Search box appears (between filter buttons and RAW button)
+□ More cards per row (should be 5-6 instead of 3-4)
+□ "Load More" button appears when there are >20 incidents
+□ Medstar units (MS##) display in red with glow effect
+□ Click SAAS incident → Google Maps link opens (even for suburb-only)
+□ Stop backend → after 1 hour, orange "Poller Offline" warning appears
+□ Test search by typing incident type or unit callsign
+
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+IF SERVICE DOESN'T START:
+
+1. Check logs for errors:
+   sudo journalctl -u sagrn-sdr -n 50 -e
+
+2. Try restarting service:
+   sudo systemctl restart sagrn-sdr
+   sleep 5
+   sudo systemctl status sagrn-sdr
+
+3. Check if frontend built correctly:
+   ls -la frontend/build/
+   # Should show "static" folder with files
+
+4. Rollback to previous version:
+   cd /opt/sagrn-sdr
+   sudo git checkout HEAD~1
+   cd frontend && npm run build && cd ..
+   sudo systemctl restart sagrn-sdr
+
+
+================================================================================
+LIVE LOG MONITORING
+================================================================================
+
+Watch real-time logs while the system processes incidents:
+
+    sudo journalctl -u sagrn-sdr -f
+
+(Press Ctrl+C to exit)
+
+To see logs from last 5 minutes:
+
+    sudo journalctl -u sagrn-sdr --since "5 minutes ago"
+
+
+================================================================================
+VERSION INFORMATION
+================================================================================
+
+To check what version you're running:
+
+    cd /opt/sagrn-sdr && git describe --tags
+
+To see recent changes:
+
+    git log --oneline -10
+
+To see full v2.0 commit details:
+
+    git show v2.0
+
+
+================================================================================
+BRANCHES
+================================================================================
+
+Production (stable):
+    sudo git checkout main
+    sudo git pull origin main
+
+Development (latest features, may be unstable):
+    sudo git checkout dev
+    sudo git pull origin dev
+
+Specific version:
+    sudo git checkout v2.0
+
+
+================================================================================
+WHAT'S NEW IN v2.0
+================================================================================
+
+Frontend:
+✓ 50% faster initial page load (lazy loading)
+✓ Search incidents by type, location, ID, or unit
+✓ More cards per row (5-6 vs 3-4)
+✓ Medstar (MS##) units highlighted in red
+✓ Poller health monitoring (1 hour timeout warning)
+✓ Suburb-only incidents now link to Google Maps
+
+Backend:
+✓ Adelaide timezone support (UTC+9:30/+10:30)
+✓ Waze deduplication (same type within 200m)
+✓ Haversine distance calculations
+
+
+================================================================================
+RELEASE NOTES
+================================================================================
+
+GitHub Release: https://github.com/steg2011/SAGRN-SDR/releases/tag/v2.0
+Release Date: 2026-01-29
+Status: Production Ready
+Branch: main
+Tag: v2.0
+
+No breaking changes - fully backward compatible with v1.x
+
+
+================================================================================
+SUPPORT
+================================================================================
+
+If you encounter issues:
+
+1. Check logs: sudo journalctl -u sagrn-sdr -f
+2. Verify version: git describe --tags
+3. Review GCP_UPDATE_v2.0.md in the repo for detailed instructions
+4. Check GitHub: https://github.com/steg2011/SAGRN-SDR/issues
+
+================================================================================
