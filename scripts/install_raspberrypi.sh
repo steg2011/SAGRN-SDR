@@ -103,9 +103,6 @@ else
     log_warn "Node.js already installed: $NODE_VERSION"
 fi
 
-# Enable npm to use less memory during builds
-npm config set memory 256
-
 # Step 4: Setup backend
 log_info "Step 4: Setting up Python backend..."
 cp -r /root/sagrn-backend "$APP_DIR/backend" 2>/dev/null || {
