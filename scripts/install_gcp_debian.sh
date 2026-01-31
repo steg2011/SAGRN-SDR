@@ -149,19 +149,25 @@ EOF
 fi
 
 # =============================================================================
-# Step 6: Build React frontend
+# Step 6: Verify pre-built frontend
 # =============================================================================
-log_info "Building React frontend..."
+log_info "Verifying pre-built frontend..."
 
 cd "$APP_DIR/frontend"
 
-# Install npm dependencies
-npm ci --production=false
+if [ ! -d "build" ]; then
+    log_error "Pre-built frontend not found!"
+    log_error "This installation requires pre-built artifacts from the repository."
+    log_error "Clone from: https://github.com/steg2011/SAGRN-SDR"
+    exit 1
+fi
 
-# Build production bundle
-npm run build
+if [ ! -f "build/index.html" ]; then
+    log_error "Pre-built frontend is incomplete"
+    exit 1
+fi
 
-log_info "Frontend built successfully"
+log_info "✓ Frontend ready (using pre-built artifacts)"
 
 # =============================================================================
 # Step 7: Set ownership and permissions

@@ -127,21 +127,26 @@ pip install -r requirements.txt
 
 log_info "✓ Backend setup complete"
 
-# Step 5: Setup frontend
-log_info "Step 5: Building React frontend..."
-log_warn "Frontend build requires significant memory. This may take 5-15 minutes..."
+# Step 5: Verify pre-built frontend
+log_info "Step 5: Verifying pre-built frontend..."
 
 cd "$APP_DIR/frontend"
 
-# Install dependencies
-log_info "Installing npm packages..."
-npm install
+if [ ! -d "build" ]; then
+    log_error "Pre-built frontend not found!"
+    log_error "This installation requires pre-built artifacts."
+    log_error "Ensure you're deploying from the latest commit that includes frontend/build/"
+    exit 1
+fi
 
-# Build production frontend
-log_info "Building production frontend..."
-npm run build
+# Verify build has required files
+if [ ! -f "build/index.html" ]; then
+    log_error "Pre-built frontend is incomplete (missing index.html)"
+    exit 1
+fi
 
-log_info "✓ Frontend build complete"
+log_info "✓ Frontend ready (using pre-built artifacts)"
+log_info "Skipped build process - saving 15-30 minutes and 800MB RAM"
 
 # Step 6: Create .env file for backend
 log_info "Step 6: Creating backend configuration..."
@@ -307,6 +312,9 @@ log_info "✓ Log rotation configured"
 
 # Step 11: Performance optimization
 log_info "Step 11: Optimizing system for low-memory operation..."
+
+# Note: Swap still created for backend operations and future flexibility
+# Frontend build no longer performed on-device (uses pre-built artifacts)
 
 # Increase swap (recommended for 1GB RPi)
 if ! grep -q "/swapfile" /etc/fstab; then

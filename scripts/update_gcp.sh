@@ -41,10 +41,17 @@ source venv/bin/activate
 pip install -r requirements.txt
 deactivate
 
-log_info "Rebuilding frontend..."
+log_info "Verifying frontend build..."
 cd "$APP_DIR/frontend"
-npm ci --production=false
-npm run build
+
+if [ ! -d "build" ] || [ ! -f "build/index.html" ]; then
+    echo "Pre-built frontend missing after update!"
+    echo "This may indicate an incomplete git pull."
+    echo "Try: cd $APP_DIR && git pull origin main --force"
+    exit 1
+fi
+
+log_info "✓ Frontend verified (pre-built)"
 
 log_info "Setting permissions..."
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
