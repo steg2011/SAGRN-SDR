@@ -20,7 +20,7 @@ venv/
 .claude/
 
 # Build outputs
-build/
+# build/ - NOW COMMITTED for reliable Pi/GCP deployment (see deployment docs)
 dist/
 *.egg-info/
 
