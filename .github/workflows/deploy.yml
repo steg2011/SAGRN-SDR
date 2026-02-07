@@ -60,7 +60,7 @@ jobs:
 
             # Generate .env from GitHub secrets
             cat > .env << 'ENVEOF'
-            DATABASE_URL=postgresql+asyncpg://sagrn:${{ secrets.POSTGRES_PASSWORD }}@db:5432/sagrn
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
             POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
             REDIS_URL=redis://redis:6379/0
             CLOUDFLARE_TUNNEL_TOKEN=${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
