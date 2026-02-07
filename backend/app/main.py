@@ -14,6 +14,7 @@ from app.api.routes import router
 from app.services.incident_service import IncidentService
 from app.services.cfs_integration import CFSIntegrationService
 from app.services.waze_service import get_waze_service
+from app.services.event_manager import get_event_manager
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -82,6 +83,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     scheduler.shutdown()
+    await get_event_manager().close()
     print("SAGRN SDR Monitor stopped")
 
 

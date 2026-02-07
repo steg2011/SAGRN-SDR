@@ -1,10 +1,11 @@
-# SAGRN SDR Monitor - Lightweight GCP Edition
-# Core dependencies optimized for low memory usage
+# SAGRN SDR Monitor - Docker Edition
+# Core dependencies for PostgreSQL + Redis deployment
 
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 sqlalchemy==2.0.25
-aiosqlite==0.19.0
+asyncpg==0.29.0
+redis[hiredis]==5.0.1
 httpx==0.26.0
 python-dateutil==2.8.2
 rapidfuzz==3.6.1

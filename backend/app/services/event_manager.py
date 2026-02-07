@@ -1,22 +1,32 @@
 import asyncio
 import json
-from typing import AsyncGenerator, Dict, Any, Set
+from typing import AsyncGenerator, Dict, Any
 from datetime import datetime
+import redis.asyncio as redis
+
+CHANNEL = "sagrn:events"
 
 
 class EventManager:
-    """Manages Server-Sent Events for real-time updates"""
+    """Manages Server-Sent Events via Redis Pub/Sub"""
 
-    def __init__(self):
-        self._subscribers: Set[asyncio.Queue] = set()
-        self._lock = asyncio.Lock()
+    def __init__(self, redis_url: str):
+        self._redis_url = redis_url
+        self._redis: redis.Redis | None = None
+
+    async def _get_redis(self) -> redis.Redis:
+        if self._redis is None:
+            self._redis = redis.from_url(
+                self._redis_url,
+                decode_responses=True
+            )
+        return self._redis
 
     async def subscribe(self) -> AsyncGenerator[str, None]:
         """Subscribe to events and yield SSE-formatted messages"""
-        queue: asyncio.Queue = asyncio.Queue()
-
-        async with self._lock:
-            self._subscribers.add(queue)
+        r = await self._get_redis()
+        pubsub = r.pubsub()
+        await pubsub.subscribe(CHANNEL)
 
         try:
             # Send initial connection event
@@ -24,28 +34,30 @@ class EventManager:
 
             while True:
                 try:
-                    # Wait for events with timeout to send keepalive
-                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
-                    yield event
+                    message = await asyncio.wait_for(
+                        pubsub.get_message(
+                            ignore_subscribe_messages=True,
+                            timeout=1.0
+                        ),
+                        timeout=15.0
+                    )
+                    if message and message["type"] == "message":
+                        yield message["data"]
+                    elif message is None:
+                        continue
                 except asyncio.TimeoutError:
-                    # Send keepalive comment to prevent connection timeout
                     yield ": keepalive\n\n"
         except asyncio.CancelledError:
             pass
         finally:
-            async with self._lock:
-                self._subscribers.discard(queue)
+            await pubsub.unsubscribe(CHANNEL)
+            await pubsub.close()
 
     async def broadcast(self, event_type: str, data: Dict[str, Any]):
-        """Broadcast an event to all subscribers"""
+        """Broadcast an event to all subscribers via Redis"""
+        r = await self._get_redis()
         message = self._format_sse(event_type, data)
-
-        async with self._lock:
-            for queue in self._subscribers:
-                try:
-                    queue.put_nowait(message)
-                except asyncio.QueueFull:
-                    pass  # Skip slow consumers
+        await r.publish(CHANNEL, message)
 
     def _format_sse(self, event_type: str, data: Dict[str, Any]) -> str:
         """Format data as Server-Sent Event"""
@@ -53,8 +65,15 @@ class EventManager:
         return f"event: {event_type}\ndata: {json_data}\n\n"
 
     @property
-    def subscriber_count(self) -> int:
-        return len(self._subscribers)
+    async def subscriber_count(self) -> int:
+        r = await self._get_redis()
+        info = await r.pubsub_numsub(CHANNEL)
+        return info.get(CHANNEL, 0) if isinstance(info, dict) else 0
+
+    async def close(self):
+        if self._redis:
+            await self._redis.close()
+            self._redis = None
 
 
 # Singleton instance
@@ -65,5 +84,7 @@ def get_event_manager() -> EventManager:
     """Get the singleton event manager instance"""
     global _event_manager
     if _event_manager is None:
-        _event_manager = EventManager()
+        from app.core.config import get_settings
+        settings = get_settings()
+        _event_manager = EventManager(settings.redis_url)
     return _event_manager

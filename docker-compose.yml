@@ -1,0 +1,80 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sagrn
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: sagrn
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sagrn"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sagrn:${POSTGRES_PASSWORD}@db:5432/sagrn
+      REDIS_URL: redis://redis:6379/0
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      WORKERS: "1"
+      STATIC_DIR: /app/frontend_build
+      CFS_INCIDENTS_XML: ${CFS_INCIDENTS_XML:-https://data.eso.sa.gov.au/prod/cfs/criimson/cfs_current_incidents.xml}
+      CFS_CAP_XML: ${CFS_CAP_XML:-https://data.eso.sa.gov.au/prod/cfs/criimson/cfs_cap_incidents.xml}
+      MESSAGE_RETENTION_HOURS: ${MESSAGE_RETENTION_HOURS:-24}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  collector:
+    build:
+      context: .
+      dockerfile: collector.Dockerfile
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - collector_logs:/collector/logs
+    environment:
+      SAGRN_SERVER_URL: http://backend:8000
+      COLLECTOR_ID: ${COLLECTOR_ID:-pager1}
+      PAGER_FREQUENCY: ${PAGER_FREQUENCY:-148.8125M}
+    depends_on:
+      - backend
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  collector_logs:
