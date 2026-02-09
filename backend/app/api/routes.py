@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -462,15 +462,21 @@ async def health_check():
 
 # Server-Sent Events endpoint
 @router.get("/events")
-async def event_stream():
+async def event_stream(request: Request):
     """
     Server-Sent Events endpoint for real-time updates.
     Clients connect here to receive push notifications for new incidents and messages.
     """
     event_manager = get_event_manager()
 
+    async def event_generator():
+        async for event in event_manager.subscribe():
+            if await request.is_disconnected():
+                break
+            yield event
+
     return StreamingResponse(
-        event_manager.subscribe(),
+        event_generator(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

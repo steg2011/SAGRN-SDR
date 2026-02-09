@@ -1,10 +1,15 @@
 import asyncio
 import json
+import time
 from typing import AsyncGenerator, Dict, Any
 from datetime import datetime
 import redis.asyncio as redis
 
 CHANNEL = "sagrn:events"
+
+# Max SSE connection lifetime (seconds). Close before Cloudflare kills it
+# so the browser gets a clean disconnect and reconnects gracefully.
+SSE_MAX_LIFETIME = 55
 
 
 class EventManager:
@@ -23,23 +28,32 @@ class EventManager:
         return self._redis
 
     async def subscribe(self) -> AsyncGenerator[str, None]:
-        """Subscribe to events and yield SSE-formatted messages"""
+        """Subscribe to events and yield SSE-formatted messages.
+
+        Connection closes after SSE_MAX_LIFETIME seconds to prevent
+        zombie connections when behind Cloudflare Tunnel.
+        """
         r = await self._get_redis()
         pubsub = r.pubsub()
         await pubsub.subscribe(CHANNEL)
+        start_time = time.monotonic()
 
         try:
-            # Send initial connection event
+            # Send initial connection event with retry hint for the browser
             yield self._format_sse("connected", {"timestamp": datetime.utcnow().isoformat()})
 
             while True:
+                # Check max lifetime - close gracefully so EventSource reconnects
+                if time.monotonic() - start_time > SSE_MAX_LIFETIME:
+                    break
+
                 try:
                     message = await asyncio.wait_for(
                         pubsub.get_message(
                             ignore_subscribe_messages=True,
                             timeout=1.0
                         ),
-                        timeout=15.0
+                        timeout=10.0
                     )
                     if message and message["type"] == "message":
                         yield message["data"]
