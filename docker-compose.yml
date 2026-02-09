@@ -72,6 +72,9 @@ services:
     command: tunnel --protocol http2 run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    sysctls:
+      - net.core.rmem_max=7500000
+      - net.core.wmem_max=7500000
     depends_on:
       - backend
 
