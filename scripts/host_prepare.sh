@@ -73,7 +73,14 @@ EOF
 udevadm control --reload-rules
 udevadm trigger
 
-echo "  DVB-T drivers blacklisted, udev rules installed"
+# Increase UDP buffer sizes for Cloudflare Tunnel (QUIC protocol)
+cat > /etc/sysctl.d/99-udp-buffer.conf << 'EOF'
+net.core.rmem_max=7500000
+net.core.wmem_max=7500000
+EOF
+sysctl --system > /dev/null 2>&1
+
+echo "  DVB-T drivers blacklisted, udev rules installed, UDP buffers configured"
 
 # 5. Clone repository and set ownership
 echo "[5/5] Setting up project directory..."
