@@ -479,8 +479,10 @@ async def event_stream(request: Request):
         event_generator(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "Content-Encoding": "none",  # Prevent compression interfering with SSE
+            "Transfer-Encoding": "chunked",  # Explicit chunked encoding
         }
     )
