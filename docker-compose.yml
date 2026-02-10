@@ -41,7 +41,7 @@ services:
       STATIC_DIR: /app/frontend_build
       CFS_INCIDENTS_XML: ${CFS_INCIDENTS_XML:-https://data.eso.sa.gov.au/prod/cfs/criimson/cfs_current_incidents.xml}
       CFS_CAP_XML: ${CFS_CAP_XML:-https://data.eso.sa.gov.au/prod/cfs/criimson/cfs_cap_incidents.xml}
-      MESSAGE_RETENTION_HOURS: ${MESSAGE_RETENTION_HOURS:-24}
+      MESSAGE_RETENTION_HOURS: ${MESSAGE_RETENTION_HOURS:-8760}
     ports:
       - "8000:8000"
     depends_on:
