@@ -45,6 +45,7 @@ function App() {
   const loadingMoreRef = useRef(false);
   const fetchDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const isFetchingRef = useRef(false);
+  const emptyLoadCount = useRef(0); // tracks consecutive loads that added 0 visible items
 
   // Fetch first page - on initial load replaces list, on refresh merges new items in
   const fetchData = useCallback(async () => {
@@ -67,7 +68,7 @@ function App() {
         setIncidents(incidentsData);
         setHasMore(incidentsData.length >= PAGE_SIZE);
       } else {
-        // Subsequent refresh (SSE/poll): merge new incidents to the top
+        // Subsequent refresh (SSE/poll): merge new incidents to the top and update existing
         const newIds: number[] = [];
         for (const incident of incidentsData) {
           if (!seenIncidentIds.current.has(incident.id)) {
@@ -89,18 +90,15 @@ function App() {
               return next;
             });
           }, NEW_INCIDENT_DURATION);
-
-          // Prepend only the genuinely new incidents
-          const newIncidents = incidentsData.filter(inc => !seenIncidentIds.current.has(inc.id));
-          newIncidents.forEach(inc => seenIncidentIds.current.add(inc.id));
-          setIncidents(prev => [...newIncidents, ...prev]);
         }
 
-        // Also update existing incidents in case their data changed (new units, status, etc.)
+        // Single setState: prepend new incidents + update existing ones in one pass
+        const newIncidents = incidentsData.filter(inc => !seenIncidentIds.current.has(inc.id));
         incidentsData.forEach(inc => seenIncidentIds.current.add(inc.id));
+        const updatedMap = new Map(incidentsData.map(inc => [inc.id, inc]));
         setIncidents(prev => {
-          const updatedMap = new Map(incidentsData.map(inc => [inc.id, inc]));
-          return prev.map(existing => updatedMap.get(existing.id) ?? existing);
+          const updated = prev.map(existing => updatedMap.get(existing.id) ?? existing);
+          return [...newIncidents, ...updated];
         });
       }
 
@@ -118,6 +116,8 @@ function App() {
   // Load more incidents (append to existing list)
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || !hasMore) return;
+    // Stop auto-loading if 3 consecutive pages added nothing visible (filter mismatch)
+    if (emptyLoadCount.current >= 3) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
 
@@ -135,6 +135,18 @@ function App() {
         const newIncidents = moreData.filter(inc => !existingIds.has(inc.id));
         setIncidents(prev => [...prev, ...newIncidents]);
         moreData.forEach(inc => seenIncidentIds.current.add(inc.id));
+
+        // Track if this page had zero items matching current filters
+        const hasAnyEnabled = Object.values(agencyFilters.enabled).some(v => v === false);
+        if (hasAnyEnabled) {
+          const matchesFilter = newIncidents.some(inc => {
+            const code = inc.agency_code ?? '';
+            return agencyFilters.enabled[code] !== false;
+          });
+          emptyLoadCount.current = matchesFilter ? 0 : emptyLoadCount.current + 1;
+        } else {
+          emptyLoadCount.current = 0;
+        }
       }
 
       setHasMore(moreData.length >= PAGE_SIZE);
@@ -144,7 +156,7 @@ function App() {
       setLoadingMore(false);
       loadingMoreRef.current = false;
     }
-  }, [incidents, hasMore, searchQuery]);
+  }, [incidents, hasMore, searchQuery, agencyFilters]);
 
   const fetchRawData = useCallback(async () => {
     try {
@@ -270,6 +282,11 @@ function App() {
 
     return () => clearInterval(interval);
   }, [lastUpdate]);
+
+  // Reset empty load counter when filters change
+  useEffect(() => {
+    emptyLoadCount.current = 0;
+  }, [agencyFilters]);
 
   // Apply all client-side filters
   const hasAnyFilter = Object.values(agencyFilters.enabled).some(v => v === false);
