@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Incident, Agency, Stats, RawMessage } from './types';
-import { getIncidents, getAgencies, getStats, getRawMessages, searchIncidents, subscribeToEvents } from './services/api';
+import { Incident, Agency, RawMessage, AgencyFilters } from './types';
+import { getIncidents, getAgencies, getRawMessages, searchIncidents, subscribeToEvents } from './services/api';
 import { IncidentCard } from './components/IncidentCard';
 import { IncidentDetail } from './components/IncidentDetail';
-import { AgencyFilter } from './components/AgencyFilter';
+import { FilterMenu } from './components/FilterMenu';
 import { RawMessageCard } from './components/RawMessageCard';
 import { SearchBar } from './components/SearchBar';
 import './App.css';
@@ -15,8 +15,6 @@ const PAGE_SIZE = 20; // Incidents per page for infinite scroll
 function App() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [agencies, setAgencies] = useState<Agency[]>([]);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [selectedAgencies, setSelectedAgencies] = useState<Set<string>>(new Set());
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -29,6 +27,14 @@ function App() {
   const [newRawMessageIds, setNewRawMessageIds] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [pollerOffline, setPollerOffline] = useState(false);
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [agencyFilters, setAgencyFilters] = useState<AgencyFilters>({
+    enabled: {},
+    saasPriority: 'all',
+    cfsAlarmLevel: 'all',
+    mfsAlarmLevel: 'all',
+    wazeCrashesOnly: false,
+  });
 
   // Track which incidents we've seen (persists across renders)
   const seenIncidentIds = useRef<Set<number>>(new Set());
@@ -41,17 +47,15 @@ function App() {
   // Fetch initial page of incidents (replaces old list)
   const fetchData = useCallback(async () => {
     try {
-      const agencyFilter = selectedAgencies.size === 1 ? Array.from(selectedAgencies)[0] : undefined;
       const isSearch = searchQuery.trim() !== '';
 
       const incidentsPromise = isSearch
-        ? searchIncidents(searchQuery, agencyFilter, PAGE_SIZE, 0)
-        : getIncidents(agencyFilter, 168, PAGE_SIZE, 0);
+        ? searchIncidents(searchQuery, undefined, PAGE_SIZE, 0)
+        : getIncidents(undefined, 168, PAGE_SIZE, 0);
 
-      const [incidentsData, agenciesData, statsData] = await Promise.all([
+      const [incidentsData, agenciesData] = await Promise.all([
         incidentsPromise,
         getAgencies(),
-        getStats(),
       ]);
 
       // Detect new incidents (skip on first load, skip for search results)
@@ -87,7 +91,6 @@ function App() {
       setIncidents(incidentsData);
       setHasMore(incidentsData.length >= PAGE_SIZE);
       setAgencies(agenciesData);
-      setStats(statsData);
       setLastUpdate(new Date());
       setError(null);
     } catch (err) {
@@ -96,7 +99,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, selectedAgencies]);
+  }, [searchQuery]);
 
   // Load more incidents (append to existing list)
   const loadMore = useCallback(async () => {
@@ -105,13 +108,12 @@ function App() {
     setLoadingMore(true);
 
     try {
-      const agencyFilter = selectedAgencies.size === 1 ? Array.from(selectedAgencies)[0] : undefined;
       const isSearch = searchQuery.trim() !== '';
       const offset = incidents.length;
 
       const moreData = isSearch
-        ? await searchIncidents(searchQuery, agencyFilter, PAGE_SIZE, offset)
-        : await getIncidents(agencyFilter, 168, PAGE_SIZE, offset);
+        ? await searchIncidents(searchQuery, undefined, PAGE_SIZE, offset)
+        : await getIncidents(undefined, 168, PAGE_SIZE, offset);
 
       if (moreData.length > 0) {
         // Deduplicate by ID
@@ -128,7 +130,7 @@ function App() {
       setLoadingMore(false);
       loadingMoreRef.current = false;
     }
-  }, [incidents, hasMore, searchQuery, selectedAgencies]);
+  }, [incidents, hasMore, searchQuery]);
 
   const fetchRawData = useCallback(async () => {
     try {
@@ -230,18 +232,6 @@ function App() {
     return () => observer.disconnect();
   }, [loadMore, hasMore, rawMode]);
 
-  const handleAgencyToggle = (agencyCode: string) => {
-    setSelectedAgencies((prev) => {
-      const next = new Set(prev);
-      if (next.has(agencyCode)) {
-        next.delete(agencyCode);
-      } else {
-        next.add(agencyCode);
-      }
-      return next;
-    });
-  };
-
   // Monitor poller health - check if no updates received in 1 hour
   useEffect(() => {
     const checkHealth = () => {
@@ -256,10 +246,36 @@ function App() {
     return () => clearInterval(interval);
   }, [lastUpdate]);
 
-  // Filter by agency client-side when multiple agencies selected
-  const visibleIncidents = selectedAgencies.size > 1
-    ? incidents.filter((inc) => inc.agency_code && selectedAgencies.has(inc.agency_code))
-    : incidents;
+  // Apply all client-side filters
+  const hasAnyFilter = Object.values(agencyFilters.enabled).some(v => v === false);
+  const visibleIncidents = incidents.filter((inc) => {
+    const code = inc.agency_code ?? '';
+
+    // Agency enabled/disabled filter
+    if (agencyFilters.enabled[code] === false) return false;
+
+    // SAAS priority filter
+    if (code === 'SAAS' && agencyFilters.saasPriority !== 'all') {
+      if (inc.priority === null || inc.priority > agencyFilters.saasPriority) return false;
+    }
+
+    // CFS alarm level filter
+    if (code === 'CFS' && agencyFilters.cfsAlarmLevel !== 'all') {
+      if (inc.alarm_level === null || inc.alarm_level < agencyFilters.cfsAlarmLevel) return false;
+    }
+
+    // MFS alarm level filter
+    if (code === 'MFS' && agencyFilters.mfsAlarmLevel !== 'all') {
+      if (inc.alarm_level === null || inc.alarm_level < agencyFilters.mfsAlarmLevel) return false;
+    }
+
+    // Waze crashes only filter
+    if (code === 'WAZE' && agencyFilters.wazeCrashesOnly) {
+      if (!inc.incident_type || !inc.incident_type.toLowerCase().includes('accident')) return false;
+    }
+
+    return true;
+  });
 
   if (loading && incidents.length === 0) {
     return (
@@ -277,26 +293,19 @@ function App() {
           <span className="subtitle">South Australia Emergency Services</span>
         </div>
         <div className="header-right">
-          {stats && (
-            <div className="stats">
-              <span className="stat">
-                <strong>{stats.total_incidents_24h}</strong> today
-              </span>
-            </div>
-          )}
-          <span className="last-update">
-            Updated: {lastUpdate.toLocaleTimeString()}
-          </span>
+          <button
+            className={`hamburger-btn ${filterMenuOpen ? 'active' : ''} ${hasAnyFilter ? 'has-filters' : ''}`}
+            onClick={() => setFilterMenuOpen(!filterMenuOpen)}
+            aria-label="Toggle filters"
+          >
+            <span className="hamburger-line" />
+            <span className="hamburger-line" />
+            <span className="hamburger-line" />
+          </button>
         </div>
       </header>
 
       <div className="filter-bar">
-        <AgencyFilter
-          agencies={agencies}
-          selectedAgencies={selectedAgencies}
-          onToggle={handleAgencyToggle}
-          disabled={rawMode}
-        />
         <SearchBar
           value={searchQuery}
           onChange={setSearchQuery}
@@ -311,6 +320,14 @@ function App() {
           RAW
         </button>
       </div>
+
+      <FilterMenu
+        isOpen={filterMenuOpen}
+        onClose={() => setFilterMenuOpen(false)}
+        agencies={agencies}
+        filters={agencyFilters}
+        onFiltersChange={setAgencyFilters}
+      />
 
       {error && <div className="error-banner">{error}</div>}
       {pollerOffline && (

@@ -52,3 +52,11 @@ export interface RawMessage {
   message: string;
   timestamp: string;
 }
+
+export interface AgencyFilters {
+  enabled: Record<string, boolean>;
+  saasPriority: 'all' | 1 | 2 | 3;
+  cfsAlarmLevel: 'all' | 1 | 2 | 3 | 4;
+  mfsAlarmLevel: 'all' | 1 | 2 | 3 | 4;
+  wazeCrashesOnly: boolean;
+}
