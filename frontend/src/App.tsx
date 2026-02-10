@@ -43,8 +43,10 @@ function App() {
   const isFirstRawLoad = useRef(true);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadingMoreRef = useRef(false);
+  const fetchDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const isFetchingRef = useRef(false);
 
-  // Fetch initial page of incidents (replaces old list)
+  // Fetch first page - on initial load replaces list, on refresh merges new items in
   const fetchData = useCallback(async () => {
     try {
       const isSearch = searchQuery.trim() !== '';
@@ -58,8 +60,14 @@ function App() {
         getAgencies(),
       ]);
 
-      // Detect new incidents (skip on first load, skip for search results)
-      if (!isFirstLoad.current && !isSearch) {
+      if (isFirstLoad.current || isSearch) {
+        // First load or search: replace the entire list
+        incidentsData.forEach(inc => seenIncidentIds.current.add(inc.id));
+        isFirstLoad.current = false;
+        setIncidents(incidentsData);
+        setHasMore(incidentsData.length >= PAGE_SIZE);
+      } else {
+        // Subsequent refresh (SSE/poll): merge new incidents to the top
         const newIds: number[] = [];
         for (const incident of incidentsData) {
           if (!seenIncidentIds.current.has(incident.id)) {
@@ -81,15 +89,21 @@ function App() {
               return next;
             });
           }, NEW_INCIDENT_DURATION);
+
+          // Prepend only the genuinely new incidents
+          const newIncidents = incidentsData.filter(inc => !seenIncidentIds.current.has(inc.id));
+          newIncidents.forEach(inc => seenIncidentIds.current.add(inc.id));
+          setIncidents(prev => [...newIncidents, ...prev]);
         }
+
+        // Also update existing incidents in case their data changed (new units, status, etc.)
+        incidentsData.forEach(inc => seenIncidentIds.current.add(inc.id));
+        setIncidents(prev => {
+          const updatedMap = new Map(incidentsData.map(inc => [inc.id, inc]));
+          return prev.map(existing => updatedMap.get(existing.id) ?? existing);
+        });
       }
 
-      // Update seen incidents
-      incidentsData.forEach(inc => seenIncidentIds.current.add(inc.id));
-      isFirstLoad.current = false;
-
-      setIncidents(incidentsData);
-      setHasMore(incidentsData.length >= PAGE_SIZE);
       setAgencies(agenciesData);
       setLastUpdate(new Date());
       setError(null);
@@ -185,32 +199,43 @@ function App() {
     }
   }, [fetchData, fetchRawData, rawMode]);
 
+  // Debounced fetch - coalesces rapid SSE events into a single fetch
+  const debouncedFetch = useCallback(() => {
+    const fetchCurrent = rawMode ? fetchRawData : fetchData;
+    if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
+    fetchDebounceRef.current = setTimeout(() => {
+      if (!isFetchingRef.current) {
+        isFetchingRef.current = true;
+        fetchCurrent().finally(() => { isFetchingRef.current = false; });
+      }
+    }, 500);
+  }, [fetchData, fetchRawData, rawMode]);
+
   // SSE subscription for real-time updates
   useEffect(() => {
-    const fetchCurrent = rawMode ? fetchRawData : fetchData;
-
     const unsubscribe = subscribeToEvents({
       onConnected: () => {
         console.log('SSE connected');
       },
       onNewMessage: () => {
-        fetchCurrent();
+        debouncedFetch();
       },
       onBatchProcessed: () => {
-        fetchCurrent();
+        debouncedFetch();
       },
       onError: (error) => {
         console.error('SSE error:', error);
       },
     });
 
-    const fallbackInterval = setInterval(fetchCurrent, FALLBACK_REFRESH_INTERVAL);
+    const fallbackInterval = setInterval(debouncedFetch, FALLBACK_REFRESH_INTERVAL);
 
     return () => {
       unsubscribe();
       clearInterval(fallbackInterval);
+      if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
     };
-  }, [fetchData, fetchRawData, rawMode]);
+  }, [debouncedFetch]);
 
   // IntersectionObserver for infinite scroll
   useEffect(() => {
