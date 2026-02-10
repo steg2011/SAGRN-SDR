@@ -252,7 +252,8 @@ class IncidentService:
         db: AsyncSession,
         hours: int = 24,
         agency_code: Optional[str] = None,
-        limit: int = 200
+        limit: int = 200,
+        offset: int = 0
     ) -> List[Incident]:
         """Get incidents from the last N hours"""
         cutoff = datetime.utcnow() - timedelta(hours=hours)
@@ -264,6 +265,49 @@ class IncidentService:
             .options(selectinload(Incident.messages))
             .where(Incident.created_at >= cutoff)
             .order_by(Incident.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+
+        if agency_code:
+            query = query.join(Agency).where(Agency.code == agency_code)
+
+        result = await db.execute(query)
+        return result.scalars().all()
+
+    async def search_incidents(
+        self,
+        db: AsyncSession,
+        query_text: str,
+        agency_code: Optional[str] = None,
+        limit: int = 20,
+        offset: int = 0
+    ) -> List[Incident]:
+        """Search incidents across the entire database using ILIKE"""
+        pattern = f"%{query_text}%"
+
+        # Subquery to find incident IDs matching unit callsigns
+        unit_subquery = (
+            select(IncidentUnit.incident_id)
+            .where(IncidentUnit.callsign.ilike(pattern))
+        ).scalar_subquery()
+
+        query = (
+            select(Incident)
+            .options(selectinload(Incident.agency))
+            .options(selectinload(Incident.units))
+            .options(selectinload(Incident.messages))
+            .where(
+                or_(
+                    Incident.incident_type.ilike(pattern),
+                    Incident.address.ilike(pattern),
+                    Incident.suburb.ilike(pattern),
+                    Incident.incident_number.ilike(pattern),
+                    Incident.id.in_(unit_subquery)
+                )
+            )
+            .order_by(Incident.created_at.desc())
+            .offset(offset)
             .limit(limit)
         )
 

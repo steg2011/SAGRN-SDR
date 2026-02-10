@@ -39,7 +39,7 @@ async def startup_tasks():
 
 
 async def cleanup_old_data():
-    """Scheduled task to clean up old data (24 hour retention)"""
+    """Scheduled task to clean up old data"""
     async with async_session() as db:
         await incident_service.cleanup_old_messages(db, hours=settings.message_retention_hours)
     print(f"Cleaned up messages older than {settings.message_retention_hours} hours")

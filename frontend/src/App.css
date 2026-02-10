@@ -301,33 +301,17 @@ body {
   font-family: monospace;
 }
 
-/* Load More Button */
-.load-more-container {
+/* Infinite Scroll Sentinel */
+.scroll-sentinel {
+  height: 1px;
+  width: 100%;
+}
+
+.loading-more {
   text-align: center;
   padding: 20px 0;
-  display: flex;
-  justify-content: center;
-}
-
-.load-more-btn {
-  padding: 12px 32px;
-  border: 2px solid #4CAF50;
-  border-radius: 24px;
-  background: transparent;
-  color: #4CAF50;
-  cursor: pointer;
+  color: #aaa;
   font-size: 0.9rem;
-  font-weight: 600;
-  transition: all 0.2s ease;
-}
-
-.load-more-btn:hover {
-  background: rgba(76, 175, 80, 0.15);
-}
-
-.load-more-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 /* Modal */

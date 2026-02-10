@@ -222,63 +222,78 @@ async def receive_batch(
     }
 
 
+def _incident_to_response(inc: Incident) -> IncidentResponse:
+    """Convert an Incident ORM object to an IncidentResponse"""
+    priority = None
+    if inc.messages:
+        for msg in inc.messages:
+            if msg.priority is not None:
+                priority = msg.priority
+                break
+
+    return IncidentResponse(
+        id=inc.id,
+        unique_id=inc.unique_id,
+        incident_number=inc.incident_number,
+        incident_date=inc.incident_date,
+        incident_type=inc.incident_type,
+        alarm_level=inc.alarm_level,
+        priority=priority,
+        status=inc.status,
+        address=inc.address,
+        suburb=inc.suburb,
+        map_reference=inc.map_reference,
+        latitude=inc.latitude,
+        longitude=inc.longitude,
+        agency_code=inc.agency.code if inc.agency else None,
+        agency_name=inc.agency.name if inc.agency else None,
+        agency_color=inc.agency.color if inc.agency else None,
+        units=[UnitResponse(
+            callsign=u.callsign,
+            status=u.status,
+            dispatched_at=u.dispatched_at
+        ) for u in inc.units],
+        messages=[IncidentMessageResponse(
+            id=m.id,
+            raw_message=m.raw_message,
+            timestamp=m.timestamp,
+            callsign=m.callsign,
+            message_type=m.message_type
+        ) for m in inc.messages],
+        created_at=inc.created_at,
+        updated_at=inc.updated_at
+    )
+
+
 # Frontend API Endpoints
 @router.get("/incidents", response_model=List[IncidentResponse])
 async def get_incidents(
     agency: Optional[str] = Query(None, description="Filter by agency code"),
-    hours: int = Query(24, ge=1, le=168, description="Hours to look back"),
-    limit: int = Query(100, ge=1, le=500),
+    hours: int = Query(168, ge=1, le=168, description="Hours to look back"),
+    limit: int = Query(20, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db)
 ):
     """Get recent incidents for display"""
     incidents = await incident_service.get_recent_incidents(
-        db, hours=hours, agency_code=agency, limit=limit
+        db, hours=hours, agency_code=agency, limit=limit, offset=offset
     )
+    return [_incident_to_response(inc) for inc in incidents]
 
-    response = []
-    for inc in incidents:
-        # Get priority from the first message (original dispatch)
-        priority = None
-        if inc.messages:
-            for msg in inc.messages:
-                if msg.priority is not None:
-                    priority = msg.priority
-                    break
 
-        response.append(IncidentResponse(
-            id=inc.id,
-            unique_id=inc.unique_id,
-            incident_number=inc.incident_number,
-            incident_date=inc.incident_date,
-            incident_type=inc.incident_type,
-            alarm_level=inc.alarm_level,
-            priority=priority,
-            status=inc.status,
-            address=inc.address,
-            suburb=inc.suburb,
-            map_reference=inc.map_reference,
-            latitude=inc.latitude,
-            longitude=inc.longitude,
-            agency_code=inc.agency.code if inc.agency else None,
-            agency_name=inc.agency.name if inc.agency else None,
-            agency_color=inc.agency.color if inc.agency else None,
-            units=[UnitResponse(
-                callsign=u.callsign,
-                status=u.status,
-                dispatched_at=u.dispatched_at
-            ) for u in inc.units],
-            messages=[IncidentMessageResponse(
-                id=m.id,
-                raw_message=m.raw_message,
-                timestamp=m.timestamp,
-                callsign=m.callsign,
-                message_type=m.message_type
-            ) for m in inc.messages],
-            created_at=inc.created_at,
-            updated_at=inc.updated_at
-        ))
-
-    return response
+@router.get("/incidents/search", response_model=List[IncidentResponse])
+async def search_incidents(
+    q: str = Query(..., min_length=1, description="Search query"),
+    agency: Optional[str] = Query(None, description="Filter by agency code"),
+    limit: int = Query(20, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db)
+):
+    """Search incidents across the entire database"""
+    incidents = await incident_service.search_incidents(
+        db, query_text=q, agency_code=agency, limit=limit, offset=offset
+    )
+    return [_incident_to_response(inc) for inc in incidents]
 
 
 @router.get("/incidents/{incident_id}", response_model=IncidentResponse)
@@ -299,46 +314,7 @@ async def get_incident(
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    # Get priority from the first message (original dispatch)
-    priority = None
-    if incident.messages:
-        for msg in incident.messages:
-            if msg.priority is not None:
-                priority = msg.priority
-                break
-
-    return IncidentResponse(
-        id=incident.id,
-        unique_id=incident.unique_id,
-        incident_number=incident.incident_number,
-        incident_date=incident.incident_date,
-        incident_type=incident.incident_type,
-        alarm_level=incident.alarm_level,
-        priority=priority,
-        status=incident.status,
-        address=incident.address,
-        suburb=incident.suburb,
-        map_reference=incident.map_reference,
-        latitude=incident.latitude,
-        longitude=incident.longitude,
-        agency_code=incident.agency.code if incident.agency else None,
-        agency_name=incident.agency.name if incident.agency else None,
-        agency_color=incident.agency.color if incident.agency else None,
-        units=[UnitResponse(
-            callsign=u.callsign,
-            status=u.status,
-            dispatched_at=u.dispatched_at
-        ) for u in incident.units],
-        messages=[IncidentMessageResponse(
-            id=m.id,
-            raw_message=m.raw_message,
-            timestamp=m.timestamp,
-            callsign=m.callsign,
-            message_type=m.message_type
-        ) for m in incident.messages],
-        created_at=incident.created_at,
-        updated_at=incident.updated_at
-    )
+    return _incident_to_response(incident)
 
 
 @router.get("/messages", response_model=List[MessageResponse])

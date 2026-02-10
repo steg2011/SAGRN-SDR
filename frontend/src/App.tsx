@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Incident, Agency, Stats, RawMessage } from './types';
-import { getIncidents, getAgencies, getStats, getRawMessages, subscribeToEvents } from './services/api';
+import { getIncidents, getAgencies, getStats, getRawMessages, searchIncidents, subscribeToEvents } from './services/api';
 import { IncidentCard } from './components/IncidentCard';
 import { IncidentDetail } from './components/IncidentDetail';
 import { AgencyFilter } from './components/AgencyFilter';
@@ -10,8 +10,7 @@ import './App.css';
 
 const FALLBACK_REFRESH_INTERVAL = 30000; // 30 seconds fallback polling (SSE is primary)
 const NEW_INCIDENT_DURATION = 30000; // How long to show "new" highlight (30 seconds)
-const INITIAL_LOAD = 20; // Initial incidents to display
-const LOAD_MORE_INCREMENT = 20; // Incidents to load per "Load More" click
+const PAGE_SIZE = 20; // Incidents per page for infinite scroll
 
 function App() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -20,6 +19,8 @@ function App() {
   const [selectedAgencies, setSelectedAgencies] = useState<Set<string>>(new Set());
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [newIncidentIds, setNewIncidentIds] = useState<Set<number>>(new Set());
@@ -27,7 +28,6 @@ function App() {
   const [rawMessages, setRawMessages] = useState<RawMessage[]>([]);
   const [newRawMessageIds, setNewRawMessageIds] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
-  const [displayLimit, setDisplayLimit] = useState(INITIAL_LOAD);
   const [pollerOffline, setPollerOffline] = useState(false);
 
   // Track which incidents we've seen (persists across renders)
@@ -35,18 +35,27 @@ function App() {
   const seenRawMessageIds = useRef<Set<number>>(new Set());
   const isFirstLoad = useRef(true);
   const isFirstRawLoad = useRef(true);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadingMoreRef = useRef(false);
 
+  // Fetch initial page of incidents (replaces old list)
   const fetchData = useCallback(async () => {
     try {
-      // Always fetch all incidents, filter client-side
+      const agencyFilter = selectedAgencies.size === 1 ? Array.from(selectedAgencies)[0] : undefined;
+      const isSearch = searchQuery.trim() !== '';
+
+      const incidentsPromise = isSearch
+        ? searchIncidents(searchQuery, agencyFilter, PAGE_SIZE, 0)
+        : getIncidents(agencyFilter, 168, PAGE_SIZE, 0);
+
       const [incidentsData, agenciesData, statsData] = await Promise.all([
-        getIncidents(),
+        incidentsPromise,
         getAgencies(),
         getStats(),
       ]);
 
-      // Detect new incidents (skip on first load)
-      if (!isFirstLoad.current) {
+      // Detect new incidents (skip on first load, skip for search results)
+      if (!isFirstLoad.current && !isSearch) {
         const newIds: number[] = [];
         for (const incident of incidentsData) {
           if (!seenIncidentIds.current.has(incident.id)) {
@@ -55,14 +64,12 @@ function App() {
         }
 
         if (newIds.length > 0) {
-          // Mark these as new
           setNewIncidentIds(prev => {
             const next = new Set(prev);
             newIds.forEach(id => next.add(id));
             return next;
           });
 
-          // Remove "new" status after duration
           setTimeout(() => {
             setNewIncidentIds(prev => {
               const next = new Set(prev);
@@ -78,6 +85,7 @@ function App() {
       isFirstLoad.current = false;
 
       setIncidents(incidentsData);
+      setHasMore(incidentsData.length >= PAGE_SIZE);
       setAgencies(agenciesData);
       setStats(statsData);
       setLastUpdate(new Date());
@@ -88,7 +96,39 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [searchQuery, selectedAgencies]);
+
+  // Load more incidents (append to existing list)
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current || !hasMore) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+
+    try {
+      const agencyFilter = selectedAgencies.size === 1 ? Array.from(selectedAgencies)[0] : undefined;
+      const isSearch = searchQuery.trim() !== '';
+      const offset = incidents.length;
+
+      const moreData = isSearch
+        ? await searchIncidents(searchQuery, agencyFilter, PAGE_SIZE, offset)
+        : await getIncidents(agencyFilter, 168, PAGE_SIZE, offset);
+
+      if (moreData.length > 0) {
+        // Deduplicate by ID
+        const existingIds = new Set(incidents.map(inc => inc.id));
+        const newIncidents = moreData.filter(inc => !existingIds.has(inc.id));
+        setIncidents(prev => [...prev, ...newIncidents]);
+        moreData.forEach(inc => seenIncidentIds.current.add(inc.id));
+      }
+
+      setHasMore(moreData.length >= PAGE_SIZE);
+    } catch (err) {
+      console.error('Load more error:', err);
+    } finally {
+      setLoadingMore(false);
+      loadingMoreRef.current = false;
+    }
+  }, [incidents, hasMore, searchQuery, selectedAgencies]);
 
   const fetchRawData = useCallback(async () => {
     try {
@@ -147,17 +187,14 @@ function App() {
   useEffect(() => {
     const fetchCurrent = rawMode ? fetchRawData : fetchData;
 
-    // Subscribe to SSE events
     const unsubscribe = subscribeToEvents({
       onConnected: () => {
         console.log('SSE connected');
       },
       onNewMessage: () => {
-        // Refetch data when new message arrives
         fetchCurrent();
       },
       onBatchProcessed: () => {
-        // Refetch data when batch is processed
         fetchCurrent();
       },
       onError: (error) => {
@@ -165,7 +202,6 @@ function App() {
       },
     });
 
-    // Fallback polling in case SSE has issues
     const fallbackInterval = setInterval(fetchCurrent, FALLBACK_REFRESH_INTERVAL);
 
     return () => {
@@ -173,6 +209,26 @@ function App() {
       clearInterval(fallbackInterval);
     };
   }, [fetchData, fetchRawData, rawMode]);
+
+  // IntersectionObserver for infinite scroll
+  useEffect(() => {
+    if (rawMode) return;
+
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loadingMoreRef.current && hasMore) {
+          loadMore();
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMore, hasMore, rawMode]);
 
   const handleAgencyToggle = (agencyCode: string) => {
     setSelectedAgencies((prev) => {
@@ -184,51 +240,26 @@ function App() {
       }
       return next;
     });
-    // Reset display limit when filter changes
-    setDisplayLimit(INITIAL_LOAD);
   };
-
-  // Reset display limit when search query changes
-  useEffect(() => {
-    setDisplayLimit(INITIAL_LOAD);
-  }, [searchQuery]);
 
   // Monitor poller health - check if no updates received in 1 hour
   useEffect(() => {
     const checkHealth = () => {
       const timeSinceUpdate = Date.now() - lastUpdate.getTime();
-      const oneHourMs = 3600000; // 1 hour in milliseconds
+      const oneHourMs = 3600000;
       setPollerOffline(timeSinceUpdate > oneHourMs);
     };
 
     checkHealth();
-    const interval = setInterval(checkHealth, 60000); // Check every minute
+    const interval = setInterval(checkHealth, 60000);
 
     return () => clearInterval(interval);
   }, [lastUpdate]);
 
-  // Filter incidents based on selected agencies (empty = show all)
-  const agencyFilteredIncidents = selectedAgencies.size === 0
-    ? incidents
-    : incidents.filter((inc) => inc.agency_code && selectedAgencies.has(inc.agency_code));
-
-  // Filter incidents based on search query
-  const filteredIncidents = searchQuery.trim() === ''
-    ? agencyFilteredIncidents
-    : agencyFilteredIncidents.filter((inc) => {
-        const q = searchQuery.toLowerCase();
-        return (
-          inc.incident_type?.toLowerCase().includes(q) ||
-          inc.address?.toLowerCase().includes(q) ||
-          inc.suburb?.toLowerCase().includes(q) ||
-          inc.incident_number?.toLowerCase().includes(q) ||
-          inc.units.some(u => u.callsign.toLowerCase().includes(q))
-        );
-      });
-
-  // Apply display limit for lazy loading
-  const visibleIncidents = filteredIncidents.slice(0, displayLimit);
-  const hasMore = filteredIncidents.length > displayLimit;
+  // Filter by agency client-side when multiple agencies selected
+  const visibleIncidents = selectedAgencies.size > 1
+    ? incidents.filter((inc) => inc.agency_code && selectedAgencies.has(inc.agency_code))
+    : incidents;
 
   if (loading && incidents.length === 0) {
     return (
@@ -275,7 +306,6 @@ function App() {
           className={`raw-btn ${rawMode ? 'active' : ''}`}
           onClick={() => {
             setRawMode(!rawMode);
-            setDisplayLimit(INITIAL_LOAD);
           }}
         >
           RAW
@@ -308,7 +338,7 @@ function App() {
       ) : (
         <div>
           <main className="incident-list">
-            {filteredIncidents.length === 0 ? (
+            {visibleIncidents.length === 0 && !loading ? (
               <div className="no-incidents">
                 No incidents found for the selected filter.
               </div>
@@ -323,16 +353,11 @@ function App() {
               ))
             )}
           </main>
-          {hasMore && (
-            <div className="load-more-container">
-              <button
-                className="load-more-btn"
-                onClick={() => setDisplayLimit(prev => prev + LOAD_MORE_INCREMENT)}
-              >
-                Load More ({filteredIncidents.length - displayLimit} remaining)
-              </button>
-            </div>
-          )}
+          <div ref={sentinelRef} className="scroll-sentinel">
+            {loadingMore && (
+              <div className="loading-more">Loading more incidents...</div>
+            )}
+          </div>
         </div>
       )}
 

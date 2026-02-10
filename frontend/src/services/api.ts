@@ -32,10 +32,24 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 export async function getIncidents(
   agency?: string,
-  hours: number = 24,
-  limit: number = 100
+  hours: number = 168,
+  limit: number = 20,
+  offset: number = 0
 ): Promise<Incident[]> {
-  let url = `${API_BASE}/incidents?hours=${hours}&limit=${limit}`;
+  let url = `${API_BASE}/incidents?hours=${hours}&limit=${limit}&offset=${offset}`;
+  if (agency && agency !== 'ALL') {
+    url += `&agency=${agency}`;
+  }
+  return fetchJson<Incident[]>(url);
+}
+
+export async function searchIncidents(
+  query: string,
+  agency?: string,
+  limit: number = 20,
+  offset: number = 0
+): Promise<Incident[]> {
+  let url = `${API_BASE}/incidents/search?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`;
   if (agency && agency !== 'ALL') {
     url += `&agency=${agency}`;
   }

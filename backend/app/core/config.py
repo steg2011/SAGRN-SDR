@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     cfs_incidents_xml: str = "https://data.eso.sa.gov.au/prod/cfs/criimson/cfs_current_incidents.xml"
     cfs_cap_xml: str = "https://data.eso.sa.gov.au/prod/cfs/criimson/cfs_cap_incidents.xml"
 
-    # Data retention - 24 hours for lightweight operation
-    message_retention_hours: int = 24
+    # Data retention - 365 days (32GB RAM, 240GB SSD with PostgreSQL)
+    message_retention_hours: int = 8760
 
     # Server configuration
     host: str = "0.0.0.0"
