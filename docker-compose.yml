@@ -69,7 +69,7 @@ services:
   tunnel:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
-    command: tunnel --no-chunked-encoding run
+    command: tunnel --no-chunked-encoding --protocol http2 run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
