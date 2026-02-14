@@ -121,6 +121,12 @@ class Incident(Base):
     # CFS integration
     cfs_status = Column(String(50))
     cfs_last_update = Column(DateTime)
+    cfs_resources = Column(Integer)
+    cfs_description = Column(Text)
+
+    # Location metadata
+    location_source = Column(String(30))  # LOCAL_LOOKUP, OFFICIAL_FEED, NOMINATIM, WAZE
+    location_confidence = Column(Float)  # fuzzy match score 0-100
 
     agency = relationship("Agency", back_populates="incidents")
     messages = relationship("Message", back_populates="incident", order_by="Message.timestamp")
@@ -172,3 +178,42 @@ class SAStreet(Base):
     suburb = Column(String(100), index=True)
     postcode = Column(String(10))
     full_address = Column(String(200))
+
+
+class SARoad(Base):
+    """South Australian road network geometries for local geocoding"""
+    __tablename__ = "sa_roads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    road_name = Column(String(100), nullable=False, index=True)
+    road_type = Column(String(20))  # ROAD, STREET, HIGHWAY etc.
+    suburb = Column(String(100), index=True)
+    geometry_wkt = Column(Text)  # WKT LineString
+    centroid_lat = Column(Float)
+    centroid_lon = Column(Float)
+    min_lat = Column(Float)
+    min_lon = Column(Float)
+    max_lat = Column(Float)
+    max_lon = Column(Float)
+
+    __table_args__ = (
+        Index('ix_sa_roads_name_suburb', 'road_name', 'suburb'),
+    )
+
+
+class SAAddress(Base):
+    """G-NAF South Australian address points for local geocoding"""
+    __tablename__ = "sa_addresses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    street_number = Column(String(20))
+    street_name = Column(String(100), nullable=False, index=True)
+    street_type = Column(String(20))
+    suburb = Column(String(100), index=True)
+    postcode = Column(String(10))
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+
+    __table_args__ = (
+        Index('ix_sa_addresses_name_suburb', 'street_name', 'suburb'),
+    )

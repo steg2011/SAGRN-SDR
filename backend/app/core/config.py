@@ -11,9 +11,13 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://sagrn:sagrn@db:5432/sagrn"
     redis_url: str = "redis://redis:6379/0"
 
-    # CFS incident feeds (provides location data, replacing Nominatim geocoding)
+    # CFS incident feeds (provides location data and official coordinates)
+    cfs_incidents_json: str = "https://data.eso.sa.gov.au/prod/cfs/criimson/cfs_current_incidents.json"
     cfs_incidents_xml: str = "https://data.eso.sa.gov.au/prod/cfs/criimson/cfs_current_incidents.xml"
     cfs_cap_xml: str = "https://data.eso.sa.gov.au/prod/cfs/criimson/cfs_cap_incidents.xml"
+
+    # Mapbox token (served to frontend via /api/config)
+    mapbox_token: str = ""
 
     # Data retention - 365 days (32GB RAM, 240GB SSD with PostgreSQL)
     message_retention_hours: int = 8760

@@ -1,4 +1,4 @@
-import { Incident, Agency, Stats, RawMessage } from '../types';
+import { Incident, Agency, Stats, RawMessage, MapIncident } from '../types';
 
 // Dynamically determine API URL based on current host
 const getApiBase = (): string => {
@@ -70,6 +70,21 @@ export async function getStats(): Promise<Stats> {
 
 export async function getRawMessages(limit: number = 100): Promise<RawMessage[]> {
   return fetchJson<RawMessage[]>(`${API_BASE}/messages/raw?limit=${limit}`);
+}
+
+export async function getMapIncidents(
+  hours: number = 24,
+  agency?: string
+): Promise<MapIncident[]> {
+  let url = `${API_BASE}/incidents/map?hours=${hours}`;
+  if (agency && agency !== 'ALL') {
+    url += `&agency=${agency}`;
+  }
+  return fetchJson<MapIncident[]>(url);
+}
+
+export async function getFrontendConfig(): Promise<{ mapbox_token: string }> {
+  return fetchJson<{ mapbox_token: string }>(`${API_BASE}/config`);
 }
 
 // Server-Sent Events

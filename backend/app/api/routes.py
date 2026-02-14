@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -69,6 +69,10 @@ class IncidentResponse(BaseModel):
     map_reference: Optional[str]
     latitude: Optional[float]
     longitude: Optional[float]
+    location_source: Optional[str]
+    location_confidence: Optional[float]
+    cfs_resources: Optional[int]
+    cfs_description: Optional[str]
     agency_code: Optional[str]
     agency_name: Optional[str]
     agency_color: Optional[str]
@@ -76,6 +80,26 @@ class IncidentResponse(BaseModel):
     messages: List[IncidentMessageResponse] = []
     created_at: datetime
     updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class MapIncidentResponse(BaseModel):
+    """Lightweight incident response for map markers."""
+    id: int
+    latitude: float
+    longitude: float
+    agency_code: Optional[str]
+    agency_color: Optional[str]
+    incident_type: Optional[str]
+    alarm_level: Optional[int]
+    status: str
+    address: Optional[str]
+    suburb: Optional[str]
+    location_source: Optional[str]
+    incident_number: str
+    incident_date: datetime
 
     class Config:
         from_attributes = True
@@ -245,6 +269,10 @@ def _incident_to_response(inc: Incident) -> IncidentResponse:
         map_reference=inc.map_reference,
         latitude=inc.latitude,
         longitude=inc.longitude,
+        location_source=inc.location_source,
+        location_confidence=inc.location_confidence,
+        cfs_resources=inc.cfs_resources,
+        cfs_description=inc.cfs_description,
         agency_code=inc.agency.code if inc.agency else None,
         agency_name=inc.agency.name if inc.agency else None,
         agency_color=inc.agency.color if inc.agency else None,
@@ -294,6 +322,51 @@ async def search_incidents(
         db, query_text=q, agency_code=agency, limit=limit, offset=offset
     )
     return [_incident_to_response(inc) for inc in incidents]
+
+
+@router.get("/incidents/map", response_model=List[MapIncidentResponse])
+async def get_map_incidents(
+    hours: int = Query(24, ge=1, le=168, description="Hours to look back"),
+    agency: Optional[str] = Query(None, description="Filter by agency code"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get incidents with coordinates for map display (lightweight payload)."""
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+    query = (
+        select(Incident)
+        .options(selectinload(Incident.agency))
+        .where(
+            Incident.created_at >= cutoff,
+            Incident.latitude.isnot(None),
+            Incident.longitude.isnot(None),
+            Incident.status != 'closed',
+        )
+        .order_by(Incident.created_at.desc())
+        .limit(500)
+    )
+
+    if agency:
+        query = query.join(Agency).where(Agency.code == agency)
+
+    result = await db.execute(query)
+    incidents = result.scalars().all()
+
+    return [MapIncidentResponse(
+        id=inc.id,
+        latitude=inc.latitude,
+        longitude=inc.longitude,
+        agency_code=inc.agency.code if inc.agency else None,
+        agency_color=inc.agency.color if inc.agency else None,
+        incident_type=inc.incident_type,
+        alarm_level=inc.alarm_level,
+        status=inc.status,
+        address=inc.address,
+        suburb=inc.suburb,
+        location_source=inc.location_source,
+        incident_number=inc.incident_number,
+        incident_date=inc.incident_date,
+    ) for inc in incidents]
 
 
 @router.get("/incidents/{incident_id}", response_model=IncidentResponse)
@@ -386,6 +459,16 @@ async def get_raw_messages(
         message=strip_flex_prefix(m.raw_message),
         timestamp=m.timestamp
     ) for m in messages]
+
+
+@router.get("/config")
+async def get_frontend_config():
+    """Get frontend configuration (Mapbox token, etc.)."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    return {
+        "mapbox_token": settings.mapbox_token,
+    }
 
 
 @router.get("/agencies")

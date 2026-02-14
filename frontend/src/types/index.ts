@@ -26,6 +26,10 @@ export interface Incident {
   map_reference: string | null;
   latitude: number | null;
   longitude: number | null;
+  location_source: string | null;
+  location_confidence: number | null;
+  cfs_resources: number | null;
+  cfs_description: string | null;
   agency_code: string | null;
   agency_name: string | null;
   agency_color: string | null;
@@ -33,6 +37,22 @@ export interface Incident {
   messages: IncidentMessage[];
   created_at: string;
   updated_at: string;
+}
+
+export interface MapIncident {
+  id: number;
+  latitude: number;
+  longitude: number;
+  agency_code: string | null;
+  agency_color: string | null;
+  incident_type: string | null;
+  alarm_level: number | null;
+  status: string;
+  address: string | null;
+  suburb: string | null;
+  location_source: string | null;
+  incident_number: string;
+  incident_date: string;
 }
 
 export interface Agency {

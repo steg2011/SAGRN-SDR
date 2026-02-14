@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Incident, Agency, RawMessage, AgencyFilters } from './types';
-import { getIncidents, getAgencies, getRawMessages, searchIncidents, subscribeToEvents } from './services/api';
+import { getIncidents, getIncident, getAgencies, getRawMessages, searchIncidents, subscribeToEvents, getFrontendConfig } from './services/api';
 import { IncidentCard } from './components/IncidentCard';
 import { IncidentDetail } from './components/IncidentDetail';
 import { FilterMenu } from './components/FilterMenu';
 import { RawMessageCard } from './components/RawMessageCard';
 import { SearchBar } from './components/SearchBar';
+import { IncidentMap } from './components/IncidentMap';
 import './App.css';
+
+type ViewMode = 'list' | 'map' | 'raw';
 
 const FALLBACK_REFRESH_INTERVAL = 30000; // 30 seconds fallback polling (SSE is primary)
 const NEW_INCIDENT_DURATION = 30000; // How long to show "new" highlight (30 seconds)
@@ -22,8 +25,10 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [newIncidentIds, setNewIncidentIds] = useState<Set<number>>(new Set());
-  const [rawMode, setRawMode] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [rawMessages, setRawMessages] = useState<RawMessage[]>([]);
+  const [mapboxToken, setMapboxToken] = useState<string>('');
+  const [mapRefreshTrigger, setMapRefreshTrigger] = useState(0);
   const [newRawMessageIds, setNewRawMessageIds] = useState<Set<number>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [pollerOffline, setPollerOffline] = useState(false);
@@ -204,24 +209,26 @@ function App() {
 
   // Initial data fetch
   useEffect(() => {
-    if (rawMode) {
+    if (viewMode === 'raw') {
       fetchRawData();
     } else {
       fetchData();
     }
-  }, [fetchData, fetchRawData, rawMode]);
+  }, [fetchData, fetchRawData, viewMode]);
 
   // Debounced fetch - coalesces rapid SSE events into a single fetch
   const debouncedFetch = useCallback(() => {
-    const fetchCurrent = rawMode ? fetchRawData : fetchData;
+    const fetchCurrent = viewMode === 'raw' ? fetchRawData : fetchData;
     if (fetchDebounceRef.current) clearTimeout(fetchDebounceRef.current);
     fetchDebounceRef.current = setTimeout(() => {
       if (!isFetchingRef.current) {
         isFetchingRef.current = true;
         fetchCurrent().finally(() => { isFetchingRef.current = false; });
       }
+      // Also trigger map refresh
+      setMapRefreshTrigger(prev => prev + 1);
     }, 500);
-  }, [fetchData, fetchRawData, rawMode]);
+  }, [fetchData, fetchRawData, viewMode]);
 
   // SSE subscription for real-time updates
   useEffect(() => {
@@ -249,9 +256,21 @@ function App() {
     };
   }, [debouncedFetch]);
 
+  // Fetch Mapbox token from backend config
+  useEffect(() => {
+    const envToken = process.env.REACT_APP_MAPBOX_TOKEN;
+    if (envToken) {
+      setMapboxToken(envToken);
+    } else {
+      getFrontendConfig().then(config => {
+        if (config.mapbox_token) setMapboxToken(config.mapbox_token);
+      }).catch(() => {});
+    }
+  }, []);
+
   // IntersectionObserver for infinite scroll
   useEffect(() => {
-    if (rawMode) return;
+    if (viewMode !== 'list') return;
 
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
@@ -267,7 +286,7 @@ function App() {
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loadMore, hasMore, rawMode]);
+  }, [loadMore, hasMore, viewMode]);
 
   // Monitor poller health - check if no updates received in 1 hour
   useEffect(() => {
@@ -351,16 +370,28 @@ function App() {
         <SearchBar
           value={searchQuery}
           onChange={setSearchQuery}
-          disabled={rawMode}
+          disabled={viewMode !== 'list'}
         />
-        <button
-          className={`raw-btn ${rawMode ? 'active' : ''}`}
-          onClick={() => {
-            setRawMode(!rawMode);
-          }}
-        >
-          RAW
-        </button>
+        <div className="view-mode-toggle">
+          <button
+            className={`view-btn ${viewMode === 'list' ? 'active' : ''}`}
+            onClick={() => setViewMode('list')}
+          >
+            LIST
+          </button>
+          <button
+            className={`view-btn ${viewMode === 'map' ? 'active' : ''}`}
+            onClick={() => setViewMode('map')}
+          >
+            MAP
+          </button>
+          <button
+            className={`view-btn ${viewMode === 'raw' ? 'active' : ''}`}
+            onClick={() => setViewMode('raw')}
+          >
+            RAW
+          </button>
+        </div>
       </div>
 
       <FilterMenu
@@ -378,7 +409,7 @@ function App() {
         </div>
       )}
 
-      {rawMode ? (
+      {viewMode === 'raw' ? (
         <main className="raw-message-list">
           {rawMessages.length === 0 ? (
             <div className="no-incidents">
@@ -394,6 +425,20 @@ function App() {
             ))
           )}
         </main>
+      ) : viewMode === 'map' ? (
+        <IncidentMap
+          mapboxToken={mapboxToken}
+          onIncidentClick={(id) => {
+            const cached = incidents.find(i => i.id === id);
+            if (cached) {
+              setSelectedIncident(cached);
+            } else {
+              getIncident(id).then(inc => setSelectedIncident(inc)).catch(() => {});
+            }
+          }}
+          refreshTrigger={mapRefreshTrigger}
+          agencyFilters={agencyFilters}
+        />
       ) : (
         <div>
           <main className="incident-list">

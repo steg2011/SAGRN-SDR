@@ -6,6 +6,10 @@ from sqlalchemy.orm import selectinload
 
 from app.models.models import Message, Incident, IncidentUnit, Agency
 from app.services.parser import ParsedMessage
+from app.services.local_geocoder import get_local_geocoder
+
+# Agencies that should be locally geocoded on message arrival
+GEOCODE_AGENCIES = {'CFS', 'MFS', 'SES'}
 
 
 class IncidentService:
@@ -192,6 +196,14 @@ class IncidentService:
         db.add(incident)
         await db.commit()
         await db.refresh(incident)
+
+        # Trigger local geocoding for CFS/MFS/SES incidents
+        if parsed.agency in GEOCODE_AGENCIES and (incident.address or incident.suburb):
+            try:
+                geocoder = get_local_geocoder()
+                await geocoder.geocode_incident(db, incident)
+            except Exception as e:
+                print(f"Local geocoding error for {incident.unique_id}: {e}")
 
         return incident
 

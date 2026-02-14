@@ -17,12 +17,16 @@ export const FilterMenu: React.FC<FilterMenuProps> = ({
   onFiltersChange,
 }) => {
   const toggleAgency = useCallback((code: string) => {
+    const currentlyEnabled = filters.enabled[code] !== false;
+    const newEnabled = { ...filters.enabled };
+    if (currentlyEnabled) {
+      newEnabled[code] = false;
+    } else {
+      delete newEnabled[code];
+    }
     onFiltersChange({
       ...filters,
-      enabled: {
-        ...filters.enabled,
-        [code]: !filters.enabled[code],
-      },
+      enabled: newEnabled,
     });
   }, [filters, onFiltersChange]);
 

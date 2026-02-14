@@ -91,6 +91,20 @@ export const IncidentDetail: React.FC<IncidentDetailProps> = ({ incident, onClos
                 <span className="value">{incident.map_reference}</span>
               </div>
             )}
+            {incident.location_source && (
+              <div className="detail-row">
+                <span className="label">Source:</span>
+                <span className={`value location-source-badge ${incident.location_source === 'OFFICIAL_FEED' ? 'official' : 'estimated'}`}>
+                  {incident.location_source === 'OFFICIAL_FEED' ? 'Official' : incident.location_source === 'LOCAL_LOOKUP' ? 'Estimated' : incident.location_source}
+                </span>
+              </div>
+            )}
+            {incident.cfs_resources && (
+              <div className="detail-row">
+                <span className="label">Resources:</span>
+                <span className="value">{incident.cfs_resources}</span>
+              </div>
+            )}
             {googleMapsUrl && (
               <div className="detail-row">
                 <a
@@ -104,6 +118,13 @@ export const IncidentDetail: React.FC<IncidentDetailProps> = ({ incident, onClos
               </div>
             )}
           </div>
+
+          {incident.cfs_description && (
+            <div className="detail-section">
+              <h3>CFS Description</h3>
+              <div className="cfs-description">{incident.cfs_description}</div>
+            </div>
+          )}
 
           <div className="detail-section">
             <h3>Units Assigned ({incident.units.length})</h3>
