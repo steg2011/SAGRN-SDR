@@ -1,59 +1,118 @@
-# SAGRN SDR Monitor - Claude Code Reference
+# SAGRN SDR Monitor - Development Guide
 
-> Emergency services pager monitoring system for South Australia (SA Government Radio Network)
-> Optimized for GCP free tier (e2-micro: 1GB RAM, 0.25 vCPU)
+Ensure claude.md file is updated whenever there is a change to the core code that may change the meaning of claude.md
 
-## Project Map
+## jcodemunch MCP Setup
+
+jcodemunch is used for code search/navigation. The project folder name contains a space which the tool cannot handle, so a workaround is required each session.
+
+**Indexed repo name**: `local/sagrn_tmp`
+
+**Steps to enable at the start of each session:**
+
+1. Load the tools (ToolSearch):
+   - `select:mcp__jcodemunch__index_folder,mcp__jcodemunch__list_repos`
+
+2. Check if already indexed (optional):
+   ```
+   mcp__jcodemunch__list_repos
+   ```
+
+3. If not indexed, copy project to a spaceless temp path and index it:
+   ```powershell
+   New-Item -ItemType Directory -Path 'C:\sagrn_tmp' -Force
+   Copy-Item -Path 'C:\Users\bradc\Documents\Development\SAGRN Lightweight\*' -Destination 'C:\sagrn_tmp' -Recurse -Force -Exclude @('node_modules','venv','__pycache__','*.db','.git','build','dist')
+   ```
+   Then call `mcp__jcodemunch__index_folder` with path `C:\sagrn_tmp` and `extra_ignore_patterns: ["node_modules","venv","__pycache__","*.pyc","build","dist",".git","*.db"]`
+
+4. After making code changes, re-index incrementally:
+   - Call `mcp__jcodemunch__index_folder` with `path: C:\sagrn_tmp` and `incremental: true`
+
+**Available tools after loading**: `get_repo_outline`, `get_file_outline`, `get_file_tree`, `search_symbols`, `search_text`, `get_symbol`, `get_symbols`
+
+
+> Real-time emergency services pager monitoring system for South Australia (SAGRN)
+> **Primary Setup**: Docker Compose on on-prem Intel NUC (PostgreSQL + Redis + Cloudflare Tunnel)
+> **Legacy Setups**: SQLite on GCP e2-micro or Raspberry Pi (still supported via scripts)
+
+## Quick Reference
+
+- **What**: Collect, parse, and display emergency dispatch messages in real-time
+- **How**: RTL-SDR → Pager messages → FastAPI parsing → React dashboard
+- **Where**: South Australian Government Radio Network (SAGRN/SAGES)
+- **Stack**: Python (FastAPI), TypeScript (React), PostgreSQL (Docker) or SQLite (legacy), async/await everywhere
+
+## Project Structure
 
 ```
 SAGRN Lightweight/
-├── backend/                    # Python FastAPI backend
+├── Dockerfile                  # Multi-stage: Node.js builds frontend, Python serves all
+├── collector.Dockerfile        # RTL-SDR pager collector container
+├── docker-compose.yml          # Full orchestration: db, redis, backend, collector, tunnel
+│
+├── .github/
+│   └── workflows/
+│       └── deploy.yml          # CI/CD: lint, test, SSH deploy to NUC
+│
+├── backend/                    # Python FastAPI async backend
 │   ├── app/
-│   │   ├── api/routes.py       # API endpoints
-│   │   ├── core/config.py      # Pydantic settings
-│   │   ├── data/sa_suburbs.py  # SA suburb lookup data
+│   │   ├── api/routes.py       # All API endpoints (incidents, collector, events)
 │   │   ├── models/
-│   │   │   ├── database.py     # SQLAlchemy async setup
-│   │   │   └── models.py       # ORM models (Agency, Message, Incident)
-│   │   ├── services/           # Business logic
-│   │   │   ├── parser.py       # Message parsing
-│   │   │   ├── incident_service.py
-│   │   │   ├── message_combiner.py
-│   │   │   ├── event_manager.py    # SSE broadcasting
-│   │   │   ├── cfs_integration.py  # CFS XML feed
-│   │   │   ├── waze_service.py     # Waze traffic API
-│   │   │   ├── geocoder.py
-│   │   │   └── suburb_matcher.py
-│   │   ├── utils/timezone.py   # Adelaide timezone helpers
-│   │   └── main.py             # FastAPI app, lifespan hooks
-│   ├── requirements.txt
-│   ├── run.py                  # Dev server entry point
-│   └── .env.example
+│   │   │   ├── database.py     # SQLAlchemy async session + engine setup
+│   │   │   └── models.py       # ORM: Agency, Message, Incident, Location, Unit types
+│   │   ├── services/           # Business logic layer
+│   │   │   ├── parser.py                # FLEX protocol → ParsedMessage
+│   │   │   ├── incident_service.py      # Grouping & deduplication logic
+│   │   │   ├── message_combiner.py      # Multi-part message reassembly
+│   │   │   ├── geocoder.py              # Nominatim + cache for lat/lon
+│   │   │   ├── suburb_matcher.py        # RapidFuzz SA suburb fuzzy matching
+│   │   │   ├── event_manager.py         # SSE broadcast management
+│   │   │   ├── cfs_integration.py       # CFS XML feed polling (5-min)
+│   │   │   └── waze_service.py          # Waze traffic data (2-min)
+│   │   ├── core/
+│   │   │   └── config.py       # Pydantic settings from environment
+│   │   ├── utils/timezone.py   # Adelaide TZ (UTC+9:30/+10:30)
+│   │   ├── data/sa_suburbs.py  # South Australian suburb list
+│   │   └── main.py             # FastAPI app init + lifespan hooks
+│   ├── requirements.txt        # Python dependencies
+│   ├── run.py                  # Local dev server entry point
+│   └── .env.example            # Environment variable template
 │
-├── frontend/                   # React TypeScript frontend
+├── frontend/                   # React 18 + TypeScript
 │   ├── src/
-│   │   ├── components/
-│   │   │   ├── AgencyFilter.tsx
-│   │   │   ├── IncidentCard.tsx
-│   │   │   ├── IncidentDetail.tsx
-│   │   │   ├── RawMessageCard.tsx
-│   │   │   └── SearchBar.tsx
-│   │   ├── services/api.ts     # API client + SSE subscription
-│   │   ├── types/index.ts      # TypeScript interfaces
-│   │   ├── App.tsx             # Main component, state management
-│   │   └── App.css             # All styles (single file)
+│   │   ├── App.tsx             # Main component + hooks-based state
+│   │   ├── App.css             # Single unified stylesheet
+│   │   ├── index.tsx           # React entry point
+│   │   ├── types/index.ts      # Shared TypeScript interfaces
+│   │   ├── services/api.ts     # API client + SSE consumer
+│   │   └── components/
+│   │       ├── IncidentCard.tsx       # Compact incident display
+│   │       ├── IncidentDetail.tsx     # Modal detail view
+│   │       ├── AgencyFilter.tsx       # Agency toggle menu
+│   │       ├── SearchBar.tsx          # Full-text search
+│   │       └── RawMessageCard.tsx     # Debug message viewer
 │   ├── package.json
-│   └── tsconfig.json
+│   ├── tsconfig.json
+│   └── public/index.html
 │
-├── scripts/                    # Deployment & utilities
-│   ├── install_gcp_debian.sh   # GCP one-command setup
-│   ├── install_raspberrypi.sh  # Pi installation
-│   ├── update_gcp.sh           # Update existing deployment
-│   ├── preflight_check.sh      # System validation
-│   ├── check_db.py             # DB inspection
-│   └── import_logs.py          # Historical data import
+├── scripts/                    # Deployment & database utilities
+│   ├── host_prepare.sh         # Intel NUC Docker host setup (users, udev, drivers)
+│   ├── collector.py            # RTL-SDR to HTTP collector script
+│   ├── install_gcp_debian.sh   # GCP Debian VM setup script (legacy)
+│   ├── update_gcp.sh           # Update existing GCP installation (legacy)
+│   ├── install_raspberrypi.sh  # Raspberry Pi full setup (legacy)
+│   ├── pi_setup.sh             # Raspberry Pi collector-only setup
+│   ├── preflight_check.sh      # System requirements check (RPi)
+│   ├── check_db.py             # Database inspection tool
+│   ├── import_logs.py          # Import historical data
+│   ├── migrate_agency.py       # Schema migrations
+│   └── update_agency_colors.py # Agency color updates
 │
-└── data/sagrn.db               # SQLite database (auto-created)
+├── data/
+│   └── sagrn.db                # SQLite database (local dev, auto-created)
+│
+├── CLAUDE.md                   # This file (developer guide)
+└── PROJECT_SYNOPSIS.md         # Quick reference index
 ```
 
 ## Tech Stack
@@ -247,44 +306,101 @@ python scripts/migrate_agency.py     # Schema migrations
 | `/api/events` | GET | SSE stream |
 | `/api/messages/raw` | GET | Raw messages |
 
-## Database Schema (Key Tables)
+## Database Schema (SQLite)
 
-- **agencies** - Emergency services (SAAS, CFS, MFS, SES, MedStar, TMC, WAZE)
-- **messages** - Raw pager messages with parsed fields
-- **incidents** - Grouped incidents by unique ID
-- **incident_units** - Units assigned to incidents
-- **locations** - Geocoded location cache
+### Core Tables
 
-## Architecture Notes
+**agencies**
+- `id`, `code` (UNIQUE), `name`, `color` (hex)
+- Services: SAAS, CFS, MFS, SES, MedStar, TMC, WAZE
+
+**messages**
+- `id`, `raw_message`, `timestamp`, `received_at`
+- FLEX protocol: `flex_speed`, `flex_frame`, `capcode`
+- Parsed: `agency_id` (FK), `incident_id` (FK), `callsign`, `priority`, `location_text`, `job_id`, `incident_type`, `message_type`, `is_duplicate`
+- Indexes: `(timestamp, agency_id)`, `(job_id, timestamp)`
+
+**incidents**
+- `id`, `unique_id` (UNIQUE), `agency_id` (FK), `incident_number`, `incident_date`
+- Details: `incident_type`, `alarm_level`, `status`, `address`, `suburb`, `map_reference`
+- **Location**: `latitude`, `longitude` (geocoded), `geocode_attempted`, `geocode_success`
+- Tracking: `created_at`, `updated_at`, `closed_at`, `cfs_status`, `cfs_last_update`
+- Index: `(incident_date, agency_id)`
+
+**incident_units**
+- `id`, `incident_id` (FK), `callsign`, `dispatched_at`, `status`
+- Index: `(incident_id, callsign)`
+
+### Lookup & Cache Tables
+
+**locations** (Geocoding cache)
+- `id`, `address_hash` (UNIQUE), `original_address`, `normalized_address`
+- `latitude`, `longitude` (from Nominatim), `geocode_success`, `geocode_source`
+- `created_at` (when cached)
+- One entry per unique address to avoid redundant geocoding API calls
+
+**capcodes**, **job_types**, **crew_abbreviations**
+- Lookup tables for FLEX message expansion
+
+**sa_streets**
+- `street_name` (indexed), `suburb`, `postcode`, `full_address`
+- Used by fuzzy matching in geocoding
+
+## How It Works
 
 ### Data Flow
 ```
-Raspberry Pi (RTL-SDR + multimon-ng)
-    ↓ POST /api/collector/message
-GCP VM (FastAPI + SQLite)
-    ↓ Serves React static build
-Browser (React UI)
-    ↑ SSE /api/events
+┌─────────────────────┐
+│  Pager Hardware     │ ← RTL-SDR captures FLEX protocol messages
+│  (Raspberry Pi)     │   POST /api/collector/message
+└──────────┬──────────┘
+           ↓
+┌─────────────────────────────────────────┐
+│  FastAPI Backend (GCP e2-micro)        │
+│  ├─ Parse FLEX → ParsedMessage         │
+│  ├─ Group by job_id → Incident         │
+│  ├─ Geocode address → lat/lon          │
+│  ├─ Fetch CFS/Waze enrichment          │
+│  └─ Broadcast via SSE /api/events      │
+└──────────┬──────────────────────────────┘
+           ↓
+┌──────────────────────┐
+│  Web Browser         │ ← React UI subscribes to /api/events
+│  (React Dashboard)   │   Shows incidents in real-time
+└──────────────────────┘
 ```
 
-### Processing Pipeline
-1. Messages arrive from Pi collector (FLEX protocol)
-2. `MessageParser` extracts agency, location, units, type
-3. `IncidentService` groups related messages
-4. `MessageCombiner` deduplicates
-5. `EventManager` broadcasts via SSE
-6. Frontend receives and renders
+### Message Processing Pipeline
 
-### Scheduled Tasks
-- **Cleanup**: Every 1 hour (24-hour retention)
-- **CFS Update**: Every 5 minutes
-- **Waze Update**: Every 2 minutes
+1. **Ingest**: Message arrives via POST /api/collector/message
+2. **Parse**: `MessageParser` extracts FLEX protocol fields
+   - FLEX speed/frame, agency, callsign, priority, location text, units, job type
+3. **Combine**: `MessageCombiner` reassembles multi-part messages
+4. **Group**: `IncidentService` finds or creates incident by unique_id
+   - `unique_id` format: `{AGENCY_CODE}_{INCIDENT_NUM}_{YYYYMMDD}`
+5. **Enrich**:
+   - Suburb matching: `SuburbMatcher` fixes typos in location text
+   - Geocoding: `GeocoderService` looks up address → lat/lon (with caching)
+   - External feeds: `CFSIntegration` & `WazeService` add context
+6. **Broadcast**: `EventManager` sends SSE event to connected clients
+7. **Cleanup**: Automatic hourly cleanup removes messages >24 hours old
 
-### Memory Optimization (GCP Free Tier)
-- Single Uvicorn worker
-- SQLite (no external DB)
-- Lazy loading (20 items, then "Load More")
-- 24-hour message retention
+### Background Services (Async Scheduled)
+
+| Task | Frequency | Purpose |
+|------|-----------|---------|
+| Message cleanup | Every 60 sec | Delete messages older than 24h |
+| CFS feed update | Every 5 min | Sync incident status from CFS XML |
+| Waze feed update | Every 2 min | Fetch traffic incident markers |
+| Geocoding process | Continuous | Background lat/lon lookup queue |
+
+### Real-Time Updates
+
+**Server-Sent Events** (`GET /api/events`)
+- Client subscribes on page load
+- Backend broadcasts on new message: `{type: "new_message", incident_id, agency, timestamp}`
+- Automatic reconnect on disconnect
+- Fallback polling every 30 seconds if SSE fails
 
 ## Environment Variables
 
@@ -298,14 +414,72 @@ PORT=8000
 WORKERS=1
 ```
 
-## Key Files for Common Tasks
+## Development Reference
 
-| Task | Files |
-|------|-------|
-| Add new agency | `backend/app/services/incident_service.py` (AGENCY_CONFIG) |
-| Modify parsing | `backend/app/services/parser.py` |
-| Add API endpoint | `backend/app/api/routes.py` |
-| Add UI component | `frontend/src/components/` |
-| Modify styles | `frontend/src/App.css` |
-| Add TypeScript type | `frontend/src/types/index.ts` |
-| Change timezone handling | `backend/app/utils/timezone.py` |
+### Common Tasks & Key Files
+
+| Task | Primary File | Details |
+|------|--------------|---------|
+| Add/modify agency | `backend/app/services/incident_service.py` | Update AGENCY_CONFIG dict (code, name, color) |
+| Parse new message format | `backend/app/services/parser.py` | Modify ParsedMessage class and parse() logic |
+| Add API endpoint | `backend/app/api/routes.py` | Add @router function, response schema class |
+| Add DB table | `backend/app/models/models.py` | Define SQLAlchemy ORM class + Base inheritance |
+| Add React component | `frontend/src/components/` | Create .tsx file with React.FC<Props> pattern |
+| Modify UI styles | `frontend/src/App.css` | Single stylesheet for all components |
+| Add TypeScript type | `frontend/src/types/index.ts` | Define interface for API response |
+| Change timezone logic | `backend/app/utils/timezone.py` | Adelaide is UTC+9:30 (winter) / UTC+10:30 (summer) |
+| Adjust data retention | `backend/app/main.py` | Search for cleanup_old_messages task (line ~200) |
+| Add scheduled task | `backend/app/main.py` | In lifespan context manager, add to scheduler |
+
+### Important Patterns
+
+**Message Parsing** (`parser.py`)
+```python
+def parse(self, raw_message: str) -> Optional[ParsedMessage]:
+    # Always return ParsedMessage with all fields or None if unparseable
+    # Set message_type: dispatch, update, stand_down, info, etc.
+    pass
+```
+
+**Database Query** (any service)
+```python
+async def get_incidents(self, db: AsyncSession, limit: int = 20) -> List[Incident]:
+    result = await db.execute(
+        select(Incident)
+        .where(Incident.status == "active")
+        .order_by(Incident.created_at.desc())
+        .limit(limit)
+    )
+    return result.scalars().all()
+```
+
+**API Response** (`routes.py`)
+```python
+class IncidentResponse(BaseModel):
+    id: int
+    incident_number: str
+    # ... other fields
+    class Config:
+        from_attributes = True  # for SQLAlchemy ORM
+```
+
+**React Component** (`components/*.tsx`)
+```typescript
+interface ComponentProps {
+  incident: Incident;
+  onSelect: (id: number) => void;
+}
+
+export const Component: React.FC<ComponentProps> = ({ incident, onSelect }) => {
+  const [state, setState] = useState(false);
+  const handler = useCallback(() => { setState(!state); }, [state]);
+  return <div onClick={handler}>...</div>;
+};
+```
+
+### Frontend State Flow
+
+- **App.tsx**: Owns incidents[], selectedFilters, searchTerm
+- Components use `useState` for local UI state (expanded, focused, etc)
+- `useEffect` hooks subscribe to SSE stream and API endpoints
+- No Redux/Context API — props drilling is acceptable for this project size

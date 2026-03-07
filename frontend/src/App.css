@@ -944,12 +944,15 @@ body {
   bottom: 12px;
   left: 12px;
   display: flex;
-  gap: 12px;
-  background: rgba(26, 26, 46, 0.85);
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  color: #ccc;
+  gap: 10px;
+  background: rgba(12, 12, 24, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 0.72rem;
+  color: #bbb;
   z-index: 1;
   flex-wrap: wrap;
 }
@@ -967,31 +970,80 @@ body {
   border: 1px solid #fff;
 }
 
-/* Map marker pulse animation */
-@keyframes map-marker-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4); }
-  70% { box-shadow: 0 0 0 8px rgba(255, 255, 255, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
-}
-
-/* Map popup styles */
+/* Map popup — modern glass card */
 .map-incident-popup .mapboxgl-popup-content {
-  background: #2a2a3e;
+  background: rgba(18, 18, 32, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   color: #eee;
   padding: 0;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  min-width: 200px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
 }
 
 .map-incident-popup .mapboxgl-popup-tip {
-  border-top-color: #2a2a3e;
+  border-top-color: rgba(18, 18, 32, 0.92);
 }
 
-.map-incident-popup .mapboxgl-popup-close-button {
-  color: #fff;
-  font-size: 18px;
-  padding: 4px 8px;
+.map-popup-card {
+  display: flex;
+  min-width: 220px;
+}
+
+.map-popup-accent {
+  width: 4px;
+  flex-shrink: 0;
+}
+
+.map-popup-body {
+  padding: 12px 14px;
+  flex: 1;
+}
+
+.map-popup-agency {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.map-popup-type {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #f0f0f0;
+  line-height: 1.3;
+  margin-bottom: 6px;
+}
+
+.map-popup-location {
+  font-size: 0.8rem;
+  color: #9a9ab0;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.map-popup-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 6px;
+}
+
+.map-popup-time {
+  font-size: 0.75rem;
+  color: #c0c0d0;
+  font-variant-numeric: tabular-nums;
+}
+
+.map-popup-source {
+  font-size: 0.68rem;
+  color: #666;
+  letter-spacing: 0.02em;
 }
 
 /* Location source badge */
