@@ -222,8 +222,8 @@ export const IncidentMap: React.FC<IncidentMapProps> = ({
         const clusterId = features[0].properties?.cluster_id;
         (mapInstance.getSource('incidents') as mapboxgl.GeoJSONSource).getClusterExpansionZoom(
           clusterId,
-          (err: Error | null, zoom: number) => {
-            if (err) return;
+          (err, zoom) => {
+            if (err || zoom == null) return;
             mapInstance.easeTo({
               center: (features[0].geometry as any).coordinates,
               zoom: zoom + 0.5,
