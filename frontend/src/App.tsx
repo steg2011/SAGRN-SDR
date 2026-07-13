@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Incident, Agency, RawMessage, AgencyFilters } from './types';
 import { getIncidents, getIncident, getAgencies, getRawMessages, searchIncidents, subscribeToEvents, getFrontendConfig } from './services/api';
 import { IncidentCard } from './components/IncidentCard';
+import { IncidentRow } from './components/IncidentRow';
 import { IncidentDetail } from './components/IncidentDetail';
 import { FilterMenu } from './components/FilterMenu';
 import { RawMessageCard } from './components/RawMessageCard';
@@ -9,7 +10,13 @@ import { SearchBar } from './components/SearchBar';
 import { IncidentMap } from './components/IncidentMap';
 import './App.css';
 
-type ViewMode = 'list' | 'map' | 'raw';
+type ViewMode = 'list' | 'compact' | 'map' | 'raw';
+
+const VIEW_MODE_STORAGE_KEY = 'sagrn_list_style';
+
+function initialViewMode(): ViewMode {
+  return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === 'compact' ? 'compact' : 'list';
+}
 
 const FALLBACK_REFRESH_INTERVAL = 30000; // 30 seconds fallback polling (SSE is primary)
 const NEW_INCIDENT_DURATION = 30000; // How long to show "new" highlight (30 seconds)
@@ -25,7 +32,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [newIncidentIds, setNewIncidentIds] = useState<Set<number>>(new Set());
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode);
   const [rawMessages, setRawMessages] = useState<RawMessage[]>([]);
   const [mapboxToken, setMapboxToken] = useState<string>('');
   const [mapRefreshTrigger, setMapRefreshTrigger] = useState(0);
@@ -40,6 +47,15 @@ function App() {
     mfsAlarmLevel: 'all',
     wazeCrashesOnly: false,
   });
+
+  const isListView = viewMode === 'list' || viewMode === 'compact';
+
+  // Remember preferred list style across sessions
+  useEffect(() => {
+    if (isListView) {
+      localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
+    }
+  }, [viewMode, isListView]);
 
   // Track which incidents we've seen (persists across renders)
   const seenIncidentIds = useRef<Set<number>>(new Set());
@@ -270,7 +286,7 @@ function App() {
 
   // IntersectionObserver for infinite scroll
   useEffect(() => {
-    if (viewMode !== 'list') return;
+    if (!isListView) return;
 
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
@@ -286,7 +302,7 @@ function App() {
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loadMore, hasMore, viewMode]);
+  }, [loadMore, hasMore, isListView]);
 
   // Monitor poller health - check if no updates received in 1 hour
   useEffect(() => {
@@ -370,7 +386,7 @@ function App() {
         <SearchBar
           value={searchQuery}
           onChange={setSearchQuery}
-          disabled={viewMode !== 'list'}
+          disabled={!isListView}
         />
         <div className="view-mode-toggle">
           <button
@@ -378,6 +394,12 @@ function App() {
             onClick={() => setViewMode('list')}
           >
             LIST
+          </button>
+          <button
+            className={`view-btn ${viewMode === 'compact' ? 'active' : ''}`}
+            onClick={() => setViewMode('compact')}
+          >
+            COMPACT
           </button>
           <button
             className={`view-btn ${viewMode === 'map' ? 'active' : ''}`}
@@ -441,20 +463,29 @@ function App() {
         />
       ) : (
         <div>
-          <main className="incident-list">
+          <main className={viewMode === 'compact' ? 'incident-list-compact' : 'incident-list'}>
             {visibleIncidents.length === 0 && !loading ? (
               <div className="no-incidents">
                 No incidents found for the selected filter.
               </div>
             ) : (
-              visibleIncidents.map((incident) => (
-                <IncidentCard
-                  key={incident.id}
-                  incident={incident}
-                  isNew={newIncidentIds.has(incident.id)}
-                  onClick={() => setSelectedIncident(incident)}
-                />
-              ))
+              visibleIncidents.map((incident) =>
+                viewMode === 'compact' ? (
+                  <IncidentRow
+                    key={incident.id}
+                    incident={incident}
+                    isNew={newIncidentIds.has(incident.id)}
+                    onClick={() => setSelectedIncident(incident)}
+                  />
+                ) : (
+                  <IncidentCard
+                    key={incident.id}
+                    incident={incident}
+                    isNew={newIncidentIds.has(incident.id)}
+                    onClick={() => setSelectedIncident(incident)}
+                  />
+                )
+              )
             )}
           </main>
           <div ref={sentinelRef} className="scroll-sentinel">

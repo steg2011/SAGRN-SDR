@@ -86,7 +86,8 @@ SAGRN Lightweight/
 │   │   ├── types/index.ts      # Shared TypeScript interfaces
 │   │   ├── services/api.ts     # API client + SSE consumer
 │   │   └── components/
-│   │       ├── IncidentCard.tsx       # Compact incident display
+│   │       ├── IncidentCard.tsx       # Card incident display (LIST view)
+│   │       ├── IncidentRow.tsx        # Single-line incident display (COMPACT view)
 │   │       ├── IncidentDetail.tsx     # Modal detail view
 │   │       ├── AgencyFilter.tsx       # Agency toggle menu
 │   │       ├── SearchBar.tsx          # Full-text search

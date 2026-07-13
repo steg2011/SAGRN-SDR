@@ -528,6 +528,129 @@ body {
   font-family: monospace;
 }
 
+/* Compact Incident List */
+.incident-list-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 0;
+}
+
+.incident-list-compact .no-incidents {
+  grid-column: unset;
+}
+
+.incident-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 8px;
+  background: #2a2a40;
+  border-left: 4px solid #888;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  min-width: 0;
+  transition: background 0.15s ease;
+}
+
+.incident-row:hover {
+  background: #3a3a50;
+}
+
+.incident-row.incident-new {
+  animation: newRowPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes newRowPulse {
+  0%, 100% {
+    background: #2a2a40;
+  }
+  50% {
+    background: rgba(255, 255, 255, 0.18);
+  }
+}
+
+.row-time {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.8rem;
+  color: #aaa;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.row-date {
+  color: #777;
+}
+
+.row-agency {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 0.7rem;
+  color: #1a1a2e;
+  padding: 1px 6px;
+  border-radius: 3px;
+  min-width: 44px;
+  text-align: center;
+}
+
+.row-priority {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ddd;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.row-priority.priority-1 {
+  color: #fff;
+  background: #d32f2f;
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-type {
+  font-weight: 600;
+  color: #eee;
+}
+
+.row-location {
+  color: #999;
+  margin-left: 8px;
+}
+
+.row-units {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.incident-row .unit-badge {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ccc;
+  white-space: nowrap;
+}
+
+.incident-row .unit-badge.unit-medstar {
+  background: #d32f2f;
+  color: #fff;
+}
+
+.row-map-ref {
+  flex-shrink: 0;
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: #777;
+}
+
 /* Infinite Scroll Sentinel */
 .scroll-sentinel {
   height: 1px;
@@ -876,6 +999,26 @@ body {
   .view-btn {
     padding: 5px 12px;
     font-size: 0.75rem;
+  }
+
+  .incident-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .row-main {
+    flex-basis: 100%;
+    order: 1;
+    white-space: normal;
+  }
+
+  .row-units {
+    order: 2;
+    flex-wrap: wrap;
+  }
+
+  .row-map-ref {
+    display: none;
   }
 }
 
