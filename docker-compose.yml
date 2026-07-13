@@ -65,6 +65,9 @@ services:
       SAGRN_SERVER_URL: http://backend:8000
       COLLECTOR_ID: ${COLLECTOR_ID:-pager1}
       PAGER_FREQUENCY: ${PAGER_FREQUENCY:-148.8125M}
+      PYTHONUNBUFFERED: "1"
+      SAGRN_SDR_TIMEOUT: ${SAGRN_SDR_TIMEOUT:-30}
+      SAGRN_GAIN: ${SAGRN_GAIN:-49.6}
     depends_on:
       - backend
 

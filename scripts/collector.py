@@ -10,6 +10,7 @@ import sys
 import time
 import os
 import glob
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -20,6 +21,18 @@ SERVER_URLS = os.environ.get('SAGRN_SERVER_URL', 'http://192.168.1.100:8000')
 COLLECTOR_ID = os.environ.get('COLLECTOR_ID', 'pager1')
 FREQUENCY = os.environ.get('PAGER_FREQUENCY', '148.8125M')  # SAGRN pager frequency
 SAMPLE_RATE = '22050'
+# Tuner gain in dB. The pager signal is weak at this site; 40 dB decoded FLEX
+# headers but not bodies, 49.6 (max) recovers bodies. Tune down if a stronger
+# antenna is fitted and overload appears.
+GAIN = os.environ.get('SAGRN_GAIN', '49.6')
+
+# Seconds without a single sample from rtl_fm before we treat the SDR as dead.
+# This tracks raw sample flow, not decoded pages, so a quiet pager channel is
+# never mistaken for a dead dongle.
+SDR_TIMEOUT = int(os.environ.get('SAGRN_SDR_TIMEOUT', '30'))
+
+_last_sample_at = time.time()
+_sample_lock = threading.Lock()
 
 # Local logging configuration
 LOG_DIR = os.environ.get('SAGRN_LOG_DIR', os.path.expanduser('~/sagrn-collector/logs'))
@@ -81,6 +94,50 @@ def send_message(message: str) -> bool:
 
     return any_success
 
+def drain_stderr(stream, label):
+    """Continuously drain a child's stderr so it can never fill its pipe buffer.
+
+    rtl_fm emits a steady stream of USB errors when the dongle glitches. If
+    nothing reads them, the 64KB pipe buffer fills and rtl_fm blocks forever
+    inside write() -- alive, holding the device, but producing no samples.
+    """
+    for raw in iter(stream.readline, b''):
+        line = raw.decode('utf-8', errors='replace').strip()
+        if line:
+            print(f"[{label}] {line}", file=sys.stderr, flush=True)
+
+
+def pump_samples(src, dst):
+    """Copy rtl_fm samples into multimon-ng, recording that the SDR is alive."""
+    global _last_sample_at
+    try:
+        while True:
+            chunk = src.read(4096)
+            if not chunk:
+                break
+            dst.write(chunk)
+            dst.flush()
+            with _sample_lock:
+                _last_sample_at = time.time()
+    except (BrokenPipeError, ValueError, OSError):
+        pass
+
+
+def watchdog():
+    """Exit non-zero if the SDR stops delivering samples, so Docker restarts us."""
+    while True:
+        time.sleep(5)
+        with _sample_lock:
+            idle = time.time() - _last_sample_at
+        if idle > SDR_TIMEOUT:
+            print(
+                f"[ERROR] No SDR samples for {idle:.0f}s (limit {SDR_TIMEOUT}s) - "
+                f"restarting collector",
+                file=sys.stderr, flush=True,
+            )
+            os._exit(1)
+
+
 def run_collector():
     """Run the SDR collector pipeline"""
     urls = [url.strip() for url in SERVER_URLS.split(',') if url.strip()]
@@ -100,7 +157,7 @@ def run_collector():
         'rtl_fm',
         '-f', FREQUENCY,
         '-s', SAMPLE_RATE,
-        '-g', '40',
+        '-g', GAIN,
         '-p', '0',
         '-'
     ]
@@ -120,28 +177,41 @@ def run_collector():
         stderr=subprocess.PIPE
     )
 
-    print(f"[INFO] Starting multimon-ng...")
-    multimon_process = subprocess.Popen(
-        multimon_cmd,
-        stdin=rtl_process.stdout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
-
-    # Check if rtl_fm started successfully
+    # Check if rtl_fm started successfully. Read stderr on a thread first so a
+    # failure message can't deadlock against the pipe we're about to drain.
     time.sleep(1)
     if rtl_process.poll() is not None:
         stderr = rtl_process.stderr.read().decode() if rtl_process.stderr else ''
-        print(f"[ERROR] rtl_fm failed to start: {stderr}", file=sys.stderr)
+        print(f"[ERROR] rtl_fm failed to start: {stderr}", file=sys.stderr, flush=True)
         sys.exit(1)
 
-    print(f"[INFO] Collector running. Listening for pager messages...")
+    print(f"[INFO] Starting multimon-ng...")
+    multimon_process = subprocess.Popen(
+        multimon_cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    for stream, label in (
+        (rtl_process.stderr, 'rtl_fm'),
+        (multimon_process.stderr, 'multimon'),
+    ):
+        threading.Thread(target=drain_stderr, args=(stream, label), daemon=True).start()
+
+    threading.Thread(
+        target=pump_samples,
+        args=(rtl_process.stdout, multimon_process.stdin),
+        daemon=True,
+    ).start()
+    threading.Thread(target=watchdog, daemon=True).start()
+
+    print(f"[INFO] Collector running. Listening for pager messages...", flush=True)
 
     message_count = 0
     try:
-        for line in multimon_process.stdout:
-            line = line.strip()
+        for raw in multimon_process.stdout:
+            line = raw.decode('utf-8', errors='replace').strip()
             if not line:
                 continue
 
