@@ -108,6 +108,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+async def _record_visit(request: Request):
+    """Store a page visit for the admin dashboard. Never raises."""
+    try:
+        from app.models.models import Visit
+        ip = request.headers.get("cf-connecting-ip") or (
+            request.client.host if request.client else None
+        )
+        async with async_session() as db:
+            db.add(Visit(
+                ip=ip,
+                country=request.headers.get("cf-ipcountry"),
+                path=str(request.url.path)[:255],
+                user_agent=(request.headers.get("user-agent") or "")[:255],
+                referer=(request.headers.get("referer") or "")[:255] or None,
+            ))
+            await db.commit()
+    except Exception as e:
+        print(f"Visit tracking failed (non-fatal): {e}")
+
+
+@app.middleware("http")
+async def track_visits(request: Request, call_next):
+    response = await call_next(request)
+    # Only count page loads: GET requests for SPA routes, not API/static/assets
+    path = request.url.path
+    if (
+        request.method == "GET"
+        and response.status_code < 400
+        and not path.startswith(("/api", "/static"))
+        and ("." not in path.rsplit("/", 1)[-1] or path == "/")
+    ):
+        asyncio.ensure_future(_record_visit(request))
+    return response
+
+
 # Include API routes
 app.include_router(router, prefix="/api")
 

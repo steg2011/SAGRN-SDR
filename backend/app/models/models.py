@@ -217,3 +217,16 @@ class SAAddress(Base):
     __table_args__ = (
         Index('ix_sa_addresses_name_suburb', 'street_name', 'suburb'),
     )
+
+
+class Visit(Base):
+    """Site visit log for the admin dashboard (populated by middleware)"""
+    __tablename__ = "visits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    visited_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    ip = Column(String(45), index=True)  # IPv4 or IPv6, from CF-Connecting-IP
+    country = Column(String(8))  # From CF-IPCountry header
+    path = Column(String(255))
+    user_agent = Column(String(255))
+    referer = Column(String(255))

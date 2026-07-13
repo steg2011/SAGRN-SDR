@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>SAGRN Admin</title>
+<style>
+  :root {
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e;
+    --muted: #898781; --grid: #e1e0d9; --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6; --series-2: #1baf7a;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+      --muted: #898781; --grid: #2c2c2a; --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5; --series-2: #199e70;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page); color: var(--ink); font-size: 14px; line-height: 1.45;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 14px 24px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--page); z-index: 10;
+  }
+  header h1 { font-size: 16px; font-weight: 650; }
+  .chip {
+    font-size: 12px; color: var(--ink-2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 2px 10px;
+  }
+  header .spacer { flex: 1; }
+  #updated { font-size: 12px; color: var(--muted); }
+  #logout {
+    font-size: 12px; padding: 5px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--ink-2);
+  }
+  main { max-width: 1280px; margin: 0 auto; padding: 20px 24px 60px; }
+  section { margin-top: 28px; }
+  h2 { font-size: 13px; font-weight: 650; text-transform: uppercase;
+       letter-spacing: 0.06em; color: var(--ink-2); margin-bottom: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .tile .label { font-size: 12px; color: var(--muted); }
+  .tile .value { font-size: 24px; font-weight: 650; margin-top: 2px; }
+  .tile .detail { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+  .meter { height: 4px; border-radius: 2px; background: var(--grid); margin-top: 8px; overflow: hidden; }
+  .meter > div { height: 100%; border-radius: 2px; background: var(--series-1); transition: width .4s; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; overflow-x: auto;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px;
+       padding: 6px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .state { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  .loglines {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px; white-space: pre-wrap; word-break: break-all;
+    max-height: 320px; overflow-y: auto; color: var(--ink-2);
+  }
+  .loglines .fault-row { padding: 3px 0; border-bottom: 1px solid var(--grid); }
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 600; border-radius: 5px;
+    padding: 1px 7px; margin-right: 8px; background: var(--grid); color: var(--ink-2);
+    font-family: system-ui, sans-serif;
+  }
+  .row { display: grid; gap: 14px; }
+  @media (min-width: 900px) {
+    .row.cols-2 { grid-template-columns: 1fr 1fr; }
+    .row.cols-2-1 { grid-template-columns: 2fr 1fr; }
+  }
+  select {
+    font-size: 13px; padding: 5px 10px; border-radius: 8px; margin-bottom: 10px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+  }
+  .legend { display: flex; gap: 16px; font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; }
+  .chart-wrap { position: relative; }
+  #tooltip {
+    position: fixed; pointer-events: none; z-index: 50; display: none;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 10px; font-size: 12px; color: var(--ink);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  }
+  #tooltip .t-title { color: var(--muted); margin-bottom: 2px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+  svg text { font-family: system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SAGRN Admin</h1>
+  <span class="chip" id="hostname">—</span>
+  <span class="chip" id="uptime">—</span>
+  <span class="spacer"></span>
+  <span id="updated">connecting…</span>
+  <button id="logout">Sign out</button>
+</header>
+
+<main>
+  <section>
+    <h2>Server</h2>
+    <div class="tiles" id="host-tiles"></div>
+  </section>
+
+  <section>
+    <h2>CPU &amp; memory — last 10 minutes</h2>
+    <div class="card chart-wrap">
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--series-1)"></span>CPU %</span>
+        <span><span class="swatch" style="background:var(--series-2)"></span>Memory %</span>
+      </div>
+      <svg id="history" width="100%" height="150" role="img" aria-label="CPU and memory usage history"></svg>
+    </div>
+  </section>
+
+  <section>
+    <h2>Docker containers</h2>
+    <div class="card">
+      <table>
+        <thead><tr>
+          <th>State</th><th>Service</th><th>Image</th><th>Status</th>
+          <th class="num">CPU %</th><th class="num">Memory</th><th class="num">Restarts</th>
+        </tr></thead>
+        <tbody id="containers"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>SDR receiver</h2>
+    <div class="tiles" id="sdr-tiles"></div>
+    <div class="card" style="margin-top:14px">
+      <div class="legend"><span>Latest decoded pager traffic</span></div>
+      <div class="loglines" id="sdr-log"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Log faults</h2>
+    <select id="fault-filter"><option value="">All containers</option></select>
+    <div class="card"><div class="loglines" id="faults"><span class="empty">Loading…</span></div></div>
+  </section>
+
+  <section>
+    <h2>Visitors</h2>
+    <div class="tiles" id="visitor-tiles"></div>
+    <div class="row cols-2-1" style="margin-top:14px">
+      <div class="card chart-wrap">
+        <div class="legend"><span>Visits per day — last 14 days</span></div>
+        <svg id="visits-chart" width="100%" height="170" role="img" aria-label="Visits per day"></svg>
+      </div>
+      <div class="card">
+        <div class="legend"><span>Top countries — 7 days</span></div>
+        <table><tbody id="countries"></tbody></table>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <table>
+        <thead><tr><th>Time (Adelaide)</th><th>IP</th><th>Country</th><th>Path</th><th>Browser</th></tr></thead>
+        <tbody id="recent-visits"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<div id="tooltip"></div>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const tooltip = $('tooltip');
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function fmtBytes(n) {
+  if (n == null) return '—';
+  const units = ['B','KB','MB','GB','TB'];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return n.toFixed(n >= 100 || i === 0 ? 0 : 1) + ' ' + units[i];
+}
+function fmtDuration(sec) {
+  if (sec == null) return '—';
+  sec = Math.floor(sec);
+  const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${sec % 60}s`;
+  return `${sec}s`;
+}
+function adelaide(iso, opts) {
+  if (!iso) return '—';
+  return new Date(iso + (iso.endsWith('Z') ? '' : 'Z')).toLocaleString('en-AU',
+    Object.assign({ timeZone: 'Australia/Adelaide', hour12: false }, opts || {}));
+}
+function showTooltip(evt, html) {
+  tooltip.innerHTML = html;
+  tooltip.style.display = 'block';
+  const pad = 14;
+  let x = evt.clientX + pad, y = evt.clientY + pad;
+  const r = tooltip.getBoundingClientRect();
+  if (x + r.width > window.innerWidth - 8) x = evt.clientX - r.width - pad;
+  if (y + r.height > window.innerHeight - 8) y = evt.clientY - r.height - pad;
+  tooltip.style.left = x + 'px'; tooltip.style.top = y + 'px';
+}
+function hideTooltip() { tooltip.style.display = 'none'; }
+
+async function api(path) {
+  const resp = await fetch(path);
+  if (resp.status === 401) { window.location.href = '/login'; throw new Error('auth'); }
+  if (!resp.ok) throw new Error(path + ' -> ' + resp.status);
+  return resp.json();
+}
+
+/* ------------------------------------------------ host tiles */
+function tile(label, value, detail, pct, barColor) {
+  const meter = pct == null ? '' :
+    `<div class="meter"><div style="width:${Math.min(100, pct)}%${barColor ? `;background:${barColor}` : ''}"></div></div>`;
+  return `<div class="tile"><div class="label">${label}</div>` +
+    `<div class="value">${value}</div><div class="detail">${detail || ''}</div>${meter}</div>`;
+}
+function usageColor(pct) {
+  if (pct == null) return null;
+  if (pct >= 92) return cssVar('--critical');
+  if (pct >= 80) return cssVar('--serious');
+  return null; /* default series blue */
+}
+
+function renderHost(host) {
+  $('hostname').textContent = host.hostname || 'host';
+  $('uptime').textContent = 'up ' + fmtDuration(host.uptime_seconds);
+  const memPct = host.memory.total_bytes ? 100 * host.memory.used_bytes / host.memory.total_bytes : null;
+  const diskPct = host.disk.total_bytes ? 100 * host.disk.used_bytes / host.disk.total_bytes : null;
+  const load = host.load_average || [];
+  $('host-tiles').innerHTML =
+    tile('CPU', host.cpu_percent.toFixed(1) + '%', host.cpu_count + ' cores', host.cpu_percent, usageColor(host.cpu_percent)) +
+    tile('Memory', memPct == null ? '—' : memPct.toFixed(1) + '%',
+         fmtBytes(host.memory.used_bytes) + ' of ' + fmtBytes(host.memory.total_bytes), memPct, usageColor(memPct)) +
+    tile('Disk', diskPct == null ? '—' : diskPct.toFixed(1) + '%',
+         fmtBytes(host.disk.used_bytes) + ' of ' + fmtBytes(host.disk.total_bytes), diskPct, usageColor(diskPct)) +
+    tile('Load average', load.map(v => v.toFixed(2)).join(' · ') || '—', '1 / 5 / 15 min') +
+    tile('CPU temp', host.cpu_temperature_c == null ? '—' : host.cpu_temperature_c.toFixed(0) + '°C', '') +
+    tile('Swap', fmtBytes(host.memory.swap_used_bytes), 'of ' + fmtBytes(host.memory.swap_total_bytes));
+}
+
+/* ------------------------------------------------ history line chart */
+const history = []; // {t, cpu, mem}
+const HISTORY_MAX = 60;
+
+function renderHistory() {
+  const svg = $('history');
+  const W = svg.clientWidth || 800, H = 150, padL = 34, padR = 40, padT = 8, padB = 18;
+  if (!history.length) return;
+  const xs = (i) => padL + (history.length === 1 ? 0 : i * (W - padL - padR) / (HISTORY_MAX - 1));
+  const ys = (v) => padT + (100 - v) * (H - padT - padB) / 100;
+  const line = (key) => history.map((p, i) =>
+    (i ? 'L' : 'M') + xs(i).toFixed(1) + ',' + ys(p[key]).toFixed(1)).join('');
+  const gridLines = [0, 50, 100].map(v =>
+    `<line x1="${padL}" x2="${W - padR}" y1="${ys(v)}" y2="${ys(v)}" stroke="var(--grid)" stroke-width="1"/>` +
+    `<text x="${padL - 6}" y="${ys(v) + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${v}</text>`
+  ).join('');
+  const last = history[history.length - 1];
+  const endLabel = (key, color) =>
+    `<text x="${xs(history.length - 1) + 6}" y="${ys(last[key]) + 4}" font-size="10" fill="${color}" font-weight="600">${last[key].toFixed(0)}%</text>`;
+  svg.innerHTML = gridLines +
+    `<path d="${line('cpu')}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round"/>` +
+    `<path d="${line('mem')}" fill="none" stroke="var(--series-2)" stroke-width="2" stroke-linejoin="round"/>` +
+    endLabel('cpu', 'var(--series-1)') + endLabel('mem', 'var(--series-2)') +
+    `<rect x="${padL}" y="${padT}" width="${Math.max(0, W - padL - padR)}" height="${H - padT - padB}" fill="transparent" id="hist-hit"/>`;
+  const hit = svg.querySelector('#hist-hit');
+  hit.addEventListener('mousemove', (evt) => {
+    const rect = svg.getBoundingClientRect();
+    const i = Math.max(0, Math.min(history.length - 1,
+      Math.round((evt.clientX - rect.left - padL) / ((W - padL - padR) / (HISTORY_MAX - 1)))));
+    const p = history[i];
+    if (!p) return;
+    showTooltip(evt, `<div class="t-title">${p.t}</div>CPU ${p.cpu.toFixed(1)}% · Mem ${p.mem.toFixed(1)}%`);
+  });
+  hit.addEventListener('mouseleave', hideTooltip);
+}
+
+/* ------------------------------------------------ containers */
+const STATE_COLORS = { running: 'var(--good)', restarting: 'var(--serious)', exited: 'var(--critical)', paused: 'var(--warning)' };
+
+function renderContainers(containers) {
+  if (!containers.length) {
+    $('containers').innerHTML = '<tr><td colspan="7" class="empty">No containers found</td></tr>';
+    return;
+  }
+  $('containers').innerHTML = containers.map(c => {
+    let state = c.state;
+    let color = STATE_COLORS[c.state] || 'var(--muted)';
+    if (c.health && c.health !== 'healthy' && c.state === 'running') {
+      state = c.health; color = 'var(--serious)';
+    } else if (c.health === 'healthy') {
+      state = 'healthy';
+    }
+    const mem = c.memory ? fmtBytes(c.memory.used_bytes) : '—';
+    return `<tr>
+      <td><span class="state"><span class="dot" style="background:${color}"></span>${esc(state)}</span></td>
+      <td><strong>${esc(c.service || c.name)}</strong></td>
+      <td class="mono">${esc(c.image)}</td>
+      <td>${esc(c.status || '—')}</td>
+      <td class="num">${c.cpu_percent == null ? '—' : c.cpu_percent.toFixed(1)}</td>
+      <td class="num">${mem}</td>
+      <td class="num">${c.restart_count ?? '—'}</td>
+    </tr>`;
+  }).join('');
+  const filter = $('fault-filter');
+  const existing = new Set([...filter.options].map(o => o.value));
+  containers.forEach(c => {
+    const name = c.service || c.name;
+    if (!existing.has(name)) {
+      const opt = document.createElement('option');
+      opt.value = name; opt.textContent = name;
+      filter.appendChild(opt);
+    }
+  });
+}
+
+/* ------------------------------------------------ SDR */
+function renderSdr(sdr) {
+  const age = sdr.last_message_age_seconds;
+  let rxState = 'No data', rxColor = 'var(--muted)', rxIcon = '•';
+  if (age != null) {
+    if (age < 300) { rxState = 'Receiving'; rxColor = 'var(--good)'; rxIcon = '✓'; }
+    else if (age < 1800) { rxState = 'Quiet'; rxColor = 'var(--warning)'; rxIcon = '!'; }
+    else { rxState = 'Stalled'; rxColor = 'var(--critical)'; rxIcon = '✕'; }
+  }
+  $('sdr-tiles').innerHTML =
+    `<div class="tile"><div class="label">Receiver</div>
+       <div class="value" style="color:${rxColor}">${rxIcon} ${rxState}</div>
+       <div class="detail">last message ${age == null ? 'never' : fmtDuration(age) + ' ago'}</div></div>` +
+    tile('Frequency', esc(sdr.frequency || '—'), 'SAGRN paging') +
+    tile('Gain', esc(sdr.gain || '—'), 'collector: ' + esc(sdr.collector_id || '—')) +
+    tile('Messages / hour', sdr.messages_last_hour ?? '—', (sdr.messages_last_24h ?? '—') + ' in 24h') +
+    tile('Collector container', esc(sdr.container_state || 'missing'),
+         (sdr.restart_count ?? 0) + ' restarts') +
+    tile('Message logs', fmtBytes(sdr.logs?.log_dir_bytes), fmtBytes(sdr.logs?.today_log_bytes) + ' today');
+  const lines = sdr.logs?.recent_lines || [];
+  $('sdr-log').textContent = lines.length ? lines.join('\n') : 'No log lines yet.';
+}
+
+/* ------------------------------------------------ faults */
+let faultData = [];
+function renderFaults() {
+  const filter = $('fault-filter').value;
+  const rows = faultData.filter(f => !filter || f.container === filter);
+  $('faults').innerHTML = rows.length
+    ? rows.map(f => `<div class="fault-row"><span class="badge">${esc(f.container)}</span>${esc(f.line)}</div>`).join('')
+    : '<span class="empty">No warnings or errors found in recent logs 🎉</span>';
+}
+$('fault-filter').addEventListener('change', renderFaults);
+
+/* ------------------------------------------------ visitors */
+function renderVisitors(v) {
+  $('visitor-tiles').innerHTML =
+    tile('Visits (24h)', v.visits_24h ?? 0, '') +
+    tile('Unique visitors (24h)', v.unique_visitors_24h ?? 0, 'by IP address') +
+    tile('Visits (7 days)', v.visits_7d ?? 0, '');
+
+  /* bar chart: single series, blue */
+  const svg = $('visits-chart');
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000);
+    days.push(d.toISOString().slice(0, 10));
+  }
+  const counts = Object.fromEntries((v.per_day || []).map(p => [p.date, p.count]));
+  const data = days.map(d => ({ date: d, count: counts[d] || 0 }));
+  const W = svg.clientWidth || 600, H = 170, padL = 30, padR = 8, padT = 10, padB = 22;
+  const max = Math.max(1, ...data.map(d => d.count));
+  const bw = (W - padL - padR) / data.length;
+  const ys = (val) => padT + (1 - val / max) * (H - padT - padB);
+  const maxIdx = data.findIndex(d => d.count === Math.max(...data.map(x => x.count)));
+  svg.innerHTML =
+    `<line x1="${padL}" x2="${W - padR}" y1="${H - padB}" y2="${H - padB}" stroke="var(--axis)" stroke-width="1"/>` +
+    data.map((d, i) => {
+      const x = padL + i * bw + bw * 0.18, w = Math.max(2, bw * 0.64);
+      const y = ys(d.count), h = Math.max(d.count > 0 ? 2 : 0, H - padB - y);
+      const label = (i === maxIdx && d.count > 0)
+        ? `<text x="${x + w / 2}" y="${y - 4}" text-anchor="middle" font-size="10" fill="var(--ink-2)" font-weight="600">${d.count}</text>` : '';
+      const dayLabel = (i % 2 === 1)
+        ? `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle" font-size="9" fill="var(--muted)">${d.date.slice(5).replace('-', '/')}</text>` : '';
+      return `<rect class="vbar" data-i="${i}" x="${(x - bw * 0.18).toFixed(1)}" y="0" width="${bw.toFixed(1)}" height="${H - padB}" fill="transparent"/>` +
+        `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="var(--series-1)" pointer-events="none"/>` +
+        label + dayLabel;
+    }).join('');
+  svg.querySelectorAll('.vbar').forEach(bar => {
+    bar.addEventListener('mousemove', (evt) => {
+      const d = data[+bar.dataset.i];
+      showTooltip(evt, `<div class="t-title">${d.date}</div>${d.count} visit${d.count === 1 ? '' : 's'}`);
+    });
+    bar.addEventListener('mouseleave', hideTooltip);
+  });
+
+  $('countries').innerHTML = (v.top_countries_7d || []).map(c =>
+    `<tr><td>${esc(c.country)}</td><td class="num">${c.count}</td></tr>`).join('') ||
+    '<tr><td class="empty">No visits recorded yet</td></tr>';
+
+  $('recent-visits').innerHTML = (v.recent || []).map(r => `<tr>
+      <td class="num">${adelaide(r.visited_at, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+      <td class="mono">${esc(r.ip || '—')}</td>
+      <td>${esc(r.country || '—')}</td>
+      <td class="mono">${esc(r.path)}</td>
+      <td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.user_agent || '')}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="empty">No visits recorded yet</td></tr>';
+}
+
+/* ------------------------------------------------ polling */
+async function refreshOverview() {
+  try {
+    const data = await api('/api/overview');
+    renderHost(data.host);
+    renderContainers(data.containers);
+    renderSdr(data.sdr);
+    const memPct = data.host.memory.total_bytes
+      ? 100 * data.host.memory.used_bytes / data.host.memory.total_bytes : 0;
+    history.push({
+      t: adelaide(data.generated_at, { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      cpu: data.host.cpu_percent, mem: memPct
+    });
+    if (history.length > HISTORY_MAX) history.shift();
+    renderHistory();
+    $('updated').textContent = 'updated ' + adelaide(data.generated_at, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch (e) {
+    $('updated').textContent = 'update failed — retrying';
+  }
+}
+async function refreshFaults() {
+  try {
+    faultData = (await api('/api/faults')).faults;
+    renderFaults();
+  } catch (e) { /* keep last data */ }
+}
+async function refreshVisitors() {
+  try { renderVisitors(await api('/api/visitors')); } catch (e) { /* keep last data */ }
+}
+
+$('logout').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login';
+});
+window.addEventListener('resize', () => { renderHistory(); });
+
+refreshOverview(); refreshFaults(); refreshVisitors();
+setInterval(refreshOverview, 10000);
+setInterval(refreshFaults, 30000);
+setInterval(refreshVisitors, 60000);
+</script>
+</body>
+</html>

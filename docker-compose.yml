@@ -31,6 +31,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: sagrn-sdr-backend
     restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -70,6 +71,31 @@ services:
       SAGRN_GAIN: ${SAGRN_GAIN:-49.6}
     depends_on:
       - backend
+
+  admin:
+    image: sagrn-sdr-backend
+    restart: unless-stopped
+    command: ["uvicorn", "app.admin.main:app", "--host", "0.0.0.0", "--port", "8100", "--workers", "1"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY}
+      HOST_PROC: /host/proc
+      HOST_SYS: /host/sys
+      HOST_DISK_PROBE: /host/hostname
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /etc/hostname:/host/hostname:ro
+      - collector_logs:/collector/logs:ro
+    ports:
+      - "127.0.0.1:8100:8100"
+    depends_on:
+      backend:
+        condition: service_started
+      db:
+        condition: service_healthy
 
   tunnel:
     image: cloudflare/cloudflared:latest

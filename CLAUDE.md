@@ -57,6 +57,12 @@ SAGRN Lightweight/
 ├── backend/                    # Python FastAPI async backend
 │   ├── app/
 │   │   ├── api/routes.py       # All API endpoints (incidents, collector, events)
+│   │   ├── admin/              # Admin dashboard (separate FastAPI app, own container)
+│   │   │   ├── main.py         # Admin app: auth routes + stats/logs/visitors API
+│   │   │   ├── auth.py         # HMAC signed-cookie sessions (stdlib only)
+│   │   │   ├── system_stats.py # Host CPU/mem/disk/temp from mounted /host/proc, /host/sys
+│   │   │   ├── docker_client.py# Docker Engine API over unix socket (httpx UDS)
+│   │   │   └── templates/      # dashboard.html + login.html (self-contained, no build step)
 │   │   ├── models/
 │   │   │   ├── database.py     # SQLAlchemy async session + engine setup
 │   │   │   └── models.py       # ORM: Agency, Message, Incident, Location, Unit types
@@ -307,6 +313,28 @@ python scripts/migrate_agency.py     # Schema migrations
 | `/api/events` | GET | SSE stream |
 | `/api/messages/raw` | GET | Raw messages |
 
+## Admin Dashboard (admin.sagrn.tmc-sa.org)
+
+Separate FastAPI app (`backend/app/admin/`) running as the `admin` compose service
+on port 8100 (bound to 127.0.0.1; public access only via the Cloudflare tunnel
+hostname `admin.sagrn.tmc-sa.org` → `http://admin:8100`). It is deliberately a
+separate container so the Docker socket and host mounts are never exposed to the
+public backend.
+
+- **Auth**: password login (`ADMIN_PASSWORD` in `.env`), 12h HMAC signed-cookie
+  session (`ADMIN_SECRET_KEY`), login rate limiting. No extra dependencies.
+- **Shows**: host CPU/mem/disk/load/temp (from `/host/proc`, `/host/sys` mounts),
+  Docker container status + per-container CPU/mem (docker.sock, mounted ro),
+  SDR receiver details (collector env + message throughput from DB + collector
+  log tail from the `collector_logs` volume), log faults (error/warning lines
+  scanned from all container logs), and site visitor analytics.
+- **Visitor tracking**: middleware in `app/main.py` records page loads (GET,
+  non-API/static) to the `visits` table with CF-Connecting-IP / CF-IPCountry.
+- **Endpoints**: `/api/login`, `/api/logout`, `/api/overview`, `/api/faults`,
+  `/api/logs?container=`, `/api/visitors` (all auth-gated except login/health).
+- The admin service reuses the backend image (`image: sagrn-sdr-backend`), so
+  `docker compose build backend && docker compose up -d admin backend` deploys both.
+
 ## Database Schema (SQLite)
 
 ### Core Tables
@@ -413,6 +441,9 @@ MESSAGE_RETENTION_HOURS=24
 HOST=0.0.0.0
 PORT=8000
 WORKERS=1
+# Admin dashboard
+ADMIN_PASSWORD=<login password for admin.sagrn.tmc-sa.org>
+ADMIN_SECRET_KEY=<random hex, signs session cookies>
 ```
 
 ## Development Reference
