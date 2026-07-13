@@ -74,8 +74,12 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(fetch_waze_incidents, 'interval', minutes=2)  # Waze updates every 2 minutes
     scheduler.start()
 
-    # Run initial Waze fetch
-    await fetch_waze_incidents()
+    # Run initial Waze fetch. Never let a bad feed or a transient DB error block
+    # startup -- the scheduler retries every 2 minutes anyway.
+    try:
+        await fetch_waze_incidents()
+    except Exception as e:
+        print(f"Initial Waze fetch failed, continuing startup: {e}")
 
     print("SAGRN SDR Monitor started (Lightweight GCP Edition)")
 

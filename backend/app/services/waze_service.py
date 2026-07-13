@@ -134,16 +134,20 @@ class WazeService:
             print("WAZE agency not found in database")
             return 0
 
-        # Fetch existing active Waze incidents for deduplication
+        # Fetch all Waze incidents, regardless of status. Alerts flap in and out of
+        # the feed, so a closed incident can reappear and would otherwise collide on
+        # the unique_id index.
         result = await db.execute(
-            select(Incident).where(
-                Incident.agency_id == waze_agency.id,
-                Incident.status == 'active'
-            )
+            select(Incident).where(Incident.agency_id == waze_agency.id)
         )
-        existing_incidents = result.scalars().all()
+        all_incidents = result.scalars().all()
+
+        incidents_by_unique_id = {inc.unique_id: inc for inc in all_incidents}
+        # Proximity dedup only considers incidents currently on the map.
+        existing_incidents = [inc for inc in all_incidents if inc.status == 'active']
 
         new_count = 0
+        reopened_count = 0
         event_manager = get_event_manager()
 
         for alert in alerts:
@@ -156,7 +160,15 @@ class WazeService:
                 unique_id = self.generate_unique_id(uuid, pub_millis)
 
                 # Check if exact incident already exists by unique_id
-                if any(inc.unique_id == unique_id for inc in existing_incidents):
+                known = incidents_by_unique_id.get(unique_id)
+                if known is not None:
+                    # The alert is back in the feed, so it is live again.
+                    if known.status == 'closed':
+                        known.status = 'active'
+                        known.closed_at = None
+                        known.updated_at = datetime.utcnow()
+                        existing_incidents.append(known)
+                        reopened_count += 1
                     continue
 
                 # Extract location
@@ -232,9 +244,10 @@ class WazeService:
                 print(f"Error processing Waze alert: {e}")
                 continue
 
-        if new_count > 0:
+        if new_count > 0 or reopened_count > 0:
             await db.commit()
 
+        if new_count > 0:
             # Broadcast SSE event for new incidents
             await event_manager.broadcast("new_message", {
                 "source": "waze",
