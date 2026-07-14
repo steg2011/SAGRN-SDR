@@ -3,6 +3,7 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { MapIncident, AgencyFilters } from '../types';
 import { getMapIncidents } from '../services/api';
+import { isDitRoad } from '../data/ditRoads';
 
 interface IncidentMapProps {
   mapboxToken: string;
@@ -356,6 +357,9 @@ export const IncidentMap: React.FC<IncidentMapProps> = ({
     }
     if (code === 'WAZE' && agencyFilters.wazeCrashesOnly) {
       if (!inc.incident_type?.toLowerCase().includes('accident')) return false;
+    }
+    if (code === 'WAZE' && agencyFilters.wazeDitRoadsOnly) {
+      if (!isDitRoad(inc.address)) return false;
     }
     return true;
   });
