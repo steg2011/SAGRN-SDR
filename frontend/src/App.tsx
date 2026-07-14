@@ -8,6 +8,7 @@ import { FilterMenu } from './components/FilterMenu';
 import { RawMessageCard } from './components/RawMessageCard';
 import { SearchBar } from './components/SearchBar';
 import { IncidentMap } from './components/IncidentMap';
+import { isDitRoad } from './data/ditRoads';
 import './App.css';
 
 type ViewMode = 'list' | 'compact' | 'map' | 'raw';
@@ -46,6 +47,7 @@ function App() {
     cfsAlarmLevel: 'all',
     mfsAlarmLevel: 'all',
     wazeCrashesOnly: false,
+    wazeDitRoadsOnly: false,
   });
 
   const isListView = viewMode === 'list' || viewMode === 'compact';
@@ -67,11 +69,15 @@ function App() {
   const fetchDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const isFetchingRef = useRef(false);
   const emptyLoadCount = useRef(0); // tracks consecutive loads that added 0 visible items
+  const prevSearchRef = useRef(''); // last search query fetched, to detect query changes (incl. clearing)
 
   // Fetch first page - on initial load replaces list, on refresh merges new items in
   const fetchData = useCallback(async () => {
     try {
-      const isSearch = searchQuery.trim() !== '';
+      const trimmedQuery = searchQuery.trim();
+      const isSearch = trimmedQuery !== '';
+      const searchChanged = prevSearchRef.current !== trimmedQuery;
+      prevSearchRef.current = trimmedQuery;
 
       const incidentsPromise = isSearch
         ? searchIncidents(searchQuery, undefined, PAGE_SIZE, 0)
@@ -82,7 +88,9 @@ function App() {
         getAgencies(),
       ]);
 
-      if (isFirstLoad.current || isSearch) {
+      // Replace the list on first load, while searching, or when the query
+      // changes (including clearing a search, which must restore the full feed)
+      if (isFirstLoad.current || isSearch || searchChanged) {
         // First load or search: replace the entire list
         incidentsData.forEach(inc => seenIncidentIds.current.add(inc.id));
         isFirstLoad.current = false;
@@ -351,6 +359,11 @@ function App() {
       if (!inc.incident_type || !inc.incident_type.toLowerCase().includes('accident')) return false;
     }
 
+    // Waze DIT (state-maintained) roads only filter
+    if (code === 'WAZE' && agencyFilters.wazeDitRoadsOnly) {
+      if (!isDitRoad(inc.address)) return false;
+    }
+
     return true;
   });
 
@@ -393,7 +406,7 @@ function App() {
             className={`view-btn ${viewMode === 'list' ? 'active' : ''}`}
             onClick={() => setViewMode('list')}
           >
-            LIST
+            TILES
           </button>
           <button
             className={`view-btn ${viewMode === 'compact' ? 'active' : ''}`}

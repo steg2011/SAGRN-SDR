@@ -618,12 +618,13 @@ body {
 }
 
 .row-type {
-  font-weight: 600;
-  color: #eee;
+  font-weight: 700;
+  color: #fff;
 }
 
 .row-location {
-  color: #999;
+  font-weight: 400;
+  color: #fff;
   margin-left: 8px;
 }
 

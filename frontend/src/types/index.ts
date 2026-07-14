@@ -79,4 +79,5 @@ export interface AgencyFilters {
   cfsAlarmLevel: 'all' | 1 | 2 | 3 | 4;
   mfsAlarmLevel: 'all' | 1 | 2 | 3 | 4;
   wazeCrashesOnly: boolean;
+  wazeDitRoadsOnly: boolean;
 }

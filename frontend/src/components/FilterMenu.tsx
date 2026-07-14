@@ -208,16 +208,22 @@ export const FilterMenu: React.FC<FilterMenuProps> = ({
                 <span className="filter-sub-label">Type</span>
                 <div className="filter-btn-group">
                   <button
-                    className={`filter-option-btn ${!filters.wazeCrashesOnly ? 'selected' : ''}`}
-                    onClick={() => onFiltersChange({ ...filters, wazeCrashesOnly: false })}
+                    className={`filter-option-btn ${!filters.wazeCrashesOnly && !filters.wazeDitRoadsOnly ? 'selected' : ''}`}
+                    onClick={() => onFiltersChange({ ...filters, wazeCrashesOnly: false, wazeDitRoadsOnly: false })}
                   >
                     All
                   </button>
                   <button
                     className={`filter-option-btn ${filters.wazeCrashesOnly ? 'selected' : ''}`}
-                    onClick={() => onFiltersChange({ ...filters, wazeCrashesOnly: true })}
+                    onClick={() => onFiltersChange({ ...filters, wazeCrashesOnly: !filters.wazeCrashesOnly })}
                   >
                     Crashes Only
+                  </button>
+                  <button
+                    className={`filter-option-btn ${filters.wazeDitRoadsOnly ? 'selected' : ''}`}
+                    onClick={() => onFiltersChange({ ...filters, wazeDitRoadsOnly: !filters.wazeDitRoadsOnly })}
+                  >
+                    DIT Roads
                   </button>
                 </div>
               </div>
