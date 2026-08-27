@@ -1,0 +1,16 @@
+# Explicit rule selection.
+#
+# CI gates the deploy on `ruff check backend/`, so the rule set must not move on
+# its own. Ruff's built-in defaults widened between 0.15 and 0.16 (316 findings
+# on unchanged code: DTZ, UP, EXE, ...), which silently turned the deploy gate
+# red. Selecting the rules here means a ruff upgrade can't break the build - only
+# a code change can.
+#
+# E4/E7/E9 + F is ruff's classic default: import layout, statement-level errors,
+# syntax errors, and pyflakes (unused imports/names, undefined references).
+# Widening this is a deliberate cleanup, not something to inherit from a version bump.
+
+line-length = 120
+
+[lint]
+select = ["E4", "E7", "E9", "F"]

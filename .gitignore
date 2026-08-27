@@ -42,3 +42,4 @@ data/*.csv
 pager_log.txt
 .env.bak*
 .env.predeploy*
+.ruff_cache/
