@@ -19,7 +19,7 @@ from typing import Optional, Tuple, List
 from rapidfuzz import fuzz, process
 from shapely import wkt as shapely_wkt
 from shapely.ops import nearest_points
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import SARoad, SAAddress, Location, Incident

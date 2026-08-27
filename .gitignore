@@ -40,3 +40,5 @@ data/*.csv
 
 # Large log files
 pager_log.txt
+.env.bak*
+.env.predeploy*

@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -10,8 +10,8 @@ from sqlalchemy.orm import selectinload
 import json
 
 from app.models.database import get_db
-from app.models.models import Message, Incident, Agency, IncidentUnit, PowerOutage
-from app.services.parser import MessageParser, ParsedMessage
+from app.models.models import Message, Incident, Agency, PowerOutage
+from app.services.parser import MessageParser
 from app.services.incident_service import IncidentService
 from app.services.message_combiner import get_message_combiner
 from app.services.event_manager import get_event_manager

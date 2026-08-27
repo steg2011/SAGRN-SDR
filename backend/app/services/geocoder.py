@@ -2,7 +2,6 @@ import asyncio
 import hashlib
 import re
 from typing import Optional, Tuple
-from datetime import datetime
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -245,7 +244,7 @@ class BackgroundGeocoder:
             # Get newest incident without geocoding attempted
             result = await db.execute(
                 select(Incident)
-                .where(Incident.geocode_attempted == False)
+                .where(Incident.geocode_attempted.is_(False))
                 .where(Incident.address.isnot(None))
                 .order_by(Incident.created_at.desc())
                 .limit(1)

@@ -58,8 +58,8 @@ jobs:
             cd /opt/sagrn-sdr
             git pull origin main
 
-            # Generate .env from GitHub secrets
-            cat > .env << 'ENVEOF'
+            # Generate the CI-managed half of .env from GitHub secrets
+            cat > .env.ci << 'ENVEOF'
             DATABASE_URL=${{ secrets.DATABASE_URL }}
             POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
             REDIS_URL=redis://redis:6379/0
@@ -72,6 +72,16 @@ jobs:
             COLLECTOR_ID=pager1
             PAGER_FREQUENCY=148.8125M
             ENVEOF
+
+            # Carry over any host-only keys CI does not manage. MAPBOX_TOKEN,
+            # ADMIN_PASSWORD and ADMIN_SECRET_KEY live only on the NUC - a plain
+            # overwrite here drops them and takes out the map and the admin login.
+            if [ -f .env ]; then
+              awk -F= '/^#/ || /^[[:space:]]*$/ {next}
+                       NR==FNR {managed[$1]; next}
+                       !($1 in managed)' .env.ci .env >> .env.ci
+            fi
+            mv .env.ci .env
 
             # Rebuild only changed containers
             docker compose up -d --build
