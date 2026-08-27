@@ -91,12 +91,17 @@ SAGRN Lightweight/
 │   │   ├── index.tsx           # React entry point
 │   │   ├── types/index.ts      # Shared TypeScript interfaces
 │   │   ├── services/api.ts     # API client + SSE consumer
+│   │   ├── data/
+│   │   │   ├── ditRoads.ts            # DIT state-maintained road names + isDitRoad()
+│   │   │   └── ditMotorways.ts        # DIT motorway/freeway/expressway matcher
 │   │   └── components/
-│   │       ├── IncidentCard.tsx       # Card incident display (LIST view)
+│   │       ├── IncidentCard.tsx       # Card incident display (TILES view)
 │   │       ├── IncidentRow.tsx        # Single-line incident display (COMPACT view)
 │   │       ├── IncidentDetail.tsx     # Modal detail view
-│   │       ├── AgencyFilter.tsx       # Agency toggle menu
-│   │       ├── SearchBar.tsx          # Full-text search
+│   │       ├── IncidentMap.tsx        # Mapbox GL map (MAP view)
+│   │       ├── FilterMenu.tsx         # Slide-out agency filter panel
+│   │       ├── AgencyFilter.tsx       # Agency toggle menu (superseded by FilterMenu)
+│   │       ├── SearchBar.tsx          # Full-text search (pop-out field in the header)
 │   │       └── RawMessageCard.tsx     # Debug message viewer
 │   ├── package.json
 │   ├── tsconfig.json
@@ -157,6 +162,26 @@ SAGRN Lightweight/
   (5-min refresh). Each outage is mirrored into an `Incident` (agency `SAPN`) so it
   appears in the job list/filter/detail, plus a companion `PowerOutage` row holding
   the affected-area polygon and outage-specific detail. See `services/sapn_service.py`.
+
+### Client-Side Filters (FilterMenu)
+
+All agency filters are applied client-side, in two places that must stay in sync:
+`App.tsx` (`visibleIncidents`) for the list views and `IncidentMap.tsx`
+(`filteredIncidents`) for the map. Adding a filter means touching `AgencyFilters` in
+`types/index.ts`, both filter blocks, and `FilterMenu.tsx`.
+
+The WAZE section carries three sub-filters:
+- **Crashes Only** - `incident_type` contains "accident"; independent of the other two
+- **DIT Roads** - `isDitRoad()`, the full state-maintained road list
+- **Motorways** - `isDitMotorway()`, the five roads DIT classifies as
+  MOTORWAY/FREEWAY/EXPRESSWAY: South Eastern Fwy, North South Mwy, Southern Exp,
+  Northern Exp, Port River Exp (plus their ramps)
+
+DIT Roads and Motorways are mutually exclusive - motorways are a subset of DIT roads,
+so selecting one clears the other. Both data files derive from the data.sa.gov.au
+'State Maintained Roads' dataset, mirrored locally in the `sa_roads` table; the
+motorway list is `SELECT DISTINCT road_name FROM sa_roads WHERE road_type IN
+('MOTORWAY','FREEWAY','EXPRESSWAY')`.
 
 ## Coding Standards
 

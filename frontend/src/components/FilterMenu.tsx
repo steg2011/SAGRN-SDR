@@ -208,8 +208,13 @@ export const FilterMenu: React.FC<FilterMenuProps> = ({
                 <span className="filter-sub-label">Type</span>
                 <div className="filter-btn-group">
                   <button
-                    className={`filter-option-btn ${!filters.wazeCrashesOnly && !filters.wazeDitRoadsOnly ? 'selected' : ''}`}
-                    onClick={() => onFiltersChange({ ...filters, wazeCrashesOnly: false, wazeDitRoadsOnly: false })}
+                    className={`filter-option-btn ${!filters.wazeCrashesOnly && !filters.wazeDitRoadsOnly && !filters.wazeMotorwaysOnly ? 'selected' : ''}`}
+                    onClick={() => onFiltersChange({
+                      ...filters,
+                      wazeCrashesOnly: false,
+                      wazeDitRoadsOnly: false,
+                      wazeMotorwaysOnly: false,
+                    })}
                   >
                     All
                   </button>
@@ -219,11 +224,27 @@ export const FilterMenu: React.FC<FilterMenuProps> = ({
                   >
                     Crashes Only
                   </button>
+                  {/* DIT Roads and Motorways are both road-scope filters, and motorways
+                      are a subset of DIT roads, so selecting one clears the other. */}
                   <button
                     className={`filter-option-btn ${filters.wazeDitRoadsOnly ? 'selected' : ''}`}
-                    onClick={() => onFiltersChange({ ...filters, wazeDitRoadsOnly: !filters.wazeDitRoadsOnly })}
+                    onClick={() => onFiltersChange({
+                      ...filters,
+                      wazeDitRoadsOnly: !filters.wazeDitRoadsOnly,
+                      wazeMotorwaysOnly: false,
+                    })}
                   >
                     DIT Roads
+                  </button>
+                  <button
+                    className={`filter-option-btn ${filters.wazeMotorwaysOnly ? 'selected' : ''}`}
+                    onClick={() => onFiltersChange({
+                      ...filters,
+                      wazeMotorwaysOnly: !filters.wazeMotorwaysOnly,
+                      wazeDitRoadsOnly: false,
+                    })}
+                  >
+                    Motorways
                   </button>
                 </div>
               </div>

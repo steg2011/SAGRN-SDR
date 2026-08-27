@@ -29,10 +29,15 @@ body {
   gap: 12px;
 }
 
+.header-left {
+  min-width: 0;
+}
+
 .header-left h1 {
   font-size: 1.5rem;
   font-weight: 600;
   color: #fff;
+  white-space: nowrap;
 }
 
 .header-left .subtitle {
@@ -41,9 +46,14 @@ body {
 }
 
 .header-right {
+  /* Relative so the narrow-screen search pop-out can anchor to the whole control
+     cluster instead of the 36px icon, which would push it off the left edge. */
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 20px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 /* Hamburger Button */
@@ -293,34 +303,93 @@ body {
   color: #fff;
 }
 
-/* Filter Bar */
-.filter-bar {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 16px 0;
-  border-bottom: 1px solid #333;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-/* Search Bar */
+/* Search Bar - collapsed icon in the header that pops out into a field */
 .search-bar {
   position: relative;
-  flex: 1;
-  max-width: 300px;
-  min-width: 200px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.search-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 2px solid #555;
+  border-radius: 50%;
+  background: transparent;
+  color: #ccc;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.search-toggle:hover:not(:disabled) {
+  border-color: #888;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.search-bar.open .search-toggle {
+  border-color: #4CAF50;
+  color: #fff;
+}
+
+.search-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Marker for a query that is still applied while the field is tucked away */
+.search-toggle.has-query::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  background: #4CAF50;
+  border-radius: 50%;
+}
+
+.search-bar.open .search-toggle.has-query::after {
+  display: none;
+}
+
+.search-popout {
+  position: absolute;
+  right: 44px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  width: 0;
+  border-radius: 18px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: width 0.25s ease, opacity 0.2s ease;
+  z-index: 20;
+}
+
+.search-bar.open .search-popout {
+  width: min(260px, calc(100vw - 120px));
+  opacity: 1;
+  pointer-events: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 .search-input {
   width: 100%;
-  padding: 8px 32px 8px 12px;
-  border: 2px solid #444;
-  border-radius: 20px;
+  padding: 7px 32px 7px 14px;
+  border: 2px solid #4CAF50;
+  border-radius: 18px;
   background: #2a2a40;
   color: #fff;
   font-size: 0.85rem;
-  transition: border-color 0.2s ease;
 }
 
 .search-input::placeholder {
@@ -329,7 +398,6 @@ body {
 
 .search-input:focus {
   outline: none;
-  border-color: #4CAF50;
 }
 
 .search-input:disabled {
@@ -686,7 +754,11 @@ body {
   max-width: 500px;
   width: 100%;
   max-height: 80vh;
-  overflow-y: auto;
+  /* Column layout so the agency header stays pinned and only the body scrolls;
+     the clip keeps the scroll track inside the card's rounded corners. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .modal-header {
@@ -696,6 +768,7 @@ body {
   padding: 16px 20px;
   border-radius: 12px 12px 0 0;
   color: #222;
+  flex-shrink: 0;
 }
 
 .modal-header h2 {
@@ -713,7 +786,55 @@ body {
 }
 
 .modal-body {
+  flex: 1;
+  min-height: 0;
   padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Soft top/bottom shading that only shows while there is more to scroll to.
+     The two `local` layers ride with the content and mask the fixed `scroll`
+     shadows once you reach either end. */
+  background-color: #2a2a40;
+  background-image:
+    linear-gradient(#2a2a40 40%, rgba(42, 42, 64, 0)),
+    linear-gradient(rgba(42, 42, 64, 0), #2a2a40 60%),
+    linear-gradient(rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0)),
+    linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.28));
+  background-repeat: no-repeat;
+  background-position: top center, bottom center, top center, bottom center;
+  background-size: 100% 26px, 100% 26px, 100% 12px, 100% 12px;
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* Slim, inset scrollbar that reads as part of the card rather than the OS */
+.modal-body,
+.filter-panel-body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.modal-body::-webkit-scrollbar,
+.filter-panel-body::-webkit-scrollbar {
+  width: 12px;
+}
+
+.modal-body::-webkit-scrollbar-track,
+.filter-panel-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-body::-webkit-scrollbar-thumb,
+.filter-panel-body::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  /* Transparent border + content-box clip leaves the thumb floating clear of the edge */
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover,
+.filter-panel-body::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.4);
 }
 
 .detail-section {
@@ -871,21 +992,22 @@ body {
   display: flex;
   gap: 0;
   border: 2px solid #555;
-  border-radius: 20px;
+  border-radius: 18px;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .view-btn {
-  padding: 6px 16px;
+  padding: 5px 13px;
   border: none;
   background: transparent;
   color: #888;
   cursor: pointer;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 700;
   transition: all 0.2s ease;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 0.8px;
 }
 
 .view-btn:not(:last-child) {
@@ -982,15 +1104,23 @@ body {
   .app-header {
     flex-direction: row;
     align-items: center;
+    gap: 8px;
+  }
+
+  .header-left h1 {
+    font-size: 1.1rem;
+  }
+
+  .header-left .subtitle {
+    display: none;
+  }
+
+  .header-right {
+    gap: 8px;
   }
 
   .incident-list {
     grid-template-columns: 1fr;
-  }
-
-  .filter-bar {
-    flex-direction: row;
-    align-items: center;
   }
 
   .filter-panel {
@@ -998,8 +1128,25 @@ body {
   }
 
   .view-btn {
-    padding: 5px 12px;
-    font-size: 0.75rem;
+    padding: 5px 9px;
+    font-size: 0.68rem;
+    letter-spacing: 0.5px;
+  }
+
+  /* Too little room to slide out sideways here, so drop the field below the
+     controls and right-align it against the header instead. */
+  .search-bar {
+    position: static;
+  }
+
+  .search-popout {
+    top: calc(100% + 10px);
+    right: 0;
+    transform: none;
+  }
+
+  .search-bar.open .search-popout {
+    width: min(280px, calc(100vw - 24px));
   }
 
   .incident-row {
@@ -1027,10 +1174,20 @@ body {
 .map-container {
   position: relative;
   width: 100%;
-  height: calc(100vh - 140px);
+  /* Offset is the header + this container's top margin, now that the search and
+     view selector live in the header instead of a second bar. */
+  height: calc(100vh - 71px);
   margin-top: 16px;
   border-radius: 8px;
   overflow: hidden;
+}
+
+/* Kept next to the base rule: a media query adds no specificity, so an override
+   further up the file would lose to it. */
+@media (max-width: 600px) {
+  .map-container {
+    height: calc(100vh - 120px);
+  }
 }
 
 .map-fullscreen {

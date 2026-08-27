@@ -114,5 +114,6 @@ export interface AgencyFilters {
   mfsAlarmLevel: 'all' | 1 | 2 | 3 | 4;
   wazeCrashesOnly: boolean;
   wazeDitRoadsOnly: boolean;
+  wazeMotorwaysOnly: boolean;
   sapnType: 'all' | 'planned' | 'unplanned';
 }

@@ -9,6 +9,7 @@ import { RawMessageCard } from './components/RawMessageCard';
 import { SearchBar } from './components/SearchBar';
 import { IncidentMap } from './components/IncidentMap';
 import { isDitRoad } from './data/ditRoads';
+import { isDitMotorway } from './data/ditMotorways';
 import './App.css';
 
 type ViewMode = 'list' | 'compact' | 'map' | 'raw';
@@ -48,6 +49,7 @@ function App() {
     mfsAlarmLevel: 'all',
     wazeCrashesOnly: false,
     wazeDitRoadsOnly: false,
+    wazeMotorwaysOnly: false,
     sapnType: 'all',
   });
 
@@ -365,6 +367,11 @@ function App() {
       if (!isDitRoad(inc.address)) return false;
     }
 
+    // Waze DIT motorways only filter (freeways/expressways/motorways)
+    if (code === 'WAZE' && agencyFilters.wazeMotorwaysOnly) {
+      if (!isDitMotorway(inc.address)) return false;
+    }
+
     // SAPN planned/unplanned filter
     if (code === 'SAPN' && agencyFilters.sapnType !== 'all') {
       const isPlanned = inc.outage?.is_planned ?? false;
@@ -391,6 +398,37 @@ function App() {
           <span className="subtitle">South Australia Emergency Services</span>
         </div>
         <div className="header-right">
+          <SearchBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            disabled={!isListView}
+          />
+          <div className="view-mode-toggle">
+            <button
+              className={`view-btn ${viewMode === 'list' ? 'active' : ''}`}
+              onClick={() => setViewMode('list')}
+            >
+              TILES
+            </button>
+            <button
+              className={`view-btn ${viewMode === 'compact' ? 'active' : ''}`}
+              onClick={() => setViewMode('compact')}
+            >
+              COMPACT
+            </button>
+            <button
+              className={`view-btn ${viewMode === 'map' ? 'active' : ''}`}
+              onClick={() => setViewMode('map')}
+            >
+              MAP
+            </button>
+            <button
+              className={`view-btn ${viewMode === 'raw' ? 'active' : ''}`}
+              onClick={() => setViewMode('raw')}
+            >
+              RAW
+            </button>
+          </div>
           <button
             className={`hamburger-btn ${filterMenuOpen ? 'active' : ''} ${hasAnyFilter ? 'has-filters' : ''}`}
             onClick={() => setFilterMenuOpen(!filterMenuOpen)}
@@ -402,40 +440,6 @@ function App() {
           </button>
         </div>
       </header>
-
-      <div className="filter-bar">
-        <SearchBar
-          value={searchQuery}
-          onChange={setSearchQuery}
-          disabled={!isListView}
-        />
-        <div className="view-mode-toggle">
-          <button
-            className={`view-btn ${viewMode === 'list' ? 'active' : ''}`}
-            onClick={() => setViewMode('list')}
-          >
-            TILES
-          </button>
-          <button
-            className={`view-btn ${viewMode === 'compact' ? 'active' : ''}`}
-            onClick={() => setViewMode('compact')}
-          >
-            COMPACT
-          </button>
-          <button
-            className={`view-btn ${viewMode === 'map' ? 'active' : ''}`}
-            onClick={() => setViewMode('map')}
-          >
-            MAP
-          </button>
-          <button
-            className={`view-btn ${viewMode === 'raw' ? 'active' : ''}`}
-            onClick={() => setViewMode('raw')}
-          >
-            RAW
-          </button>
-        </div>
-      </div>
 
       <FilterMenu
         isOpen={filterMenuOpen}

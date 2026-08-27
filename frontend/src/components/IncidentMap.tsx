@@ -4,6 +4,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { MapIncident, AgencyFilters, OutageArea } from '../types';
 import { getMapIncidents, getOutages } from '../services/api';
 import { isDitRoad } from '../data/ditRoads';
+import { isDitMotorway } from '../data/ditMotorways';
 
 interface IncidentMapProps {
   mapboxToken: string;
@@ -478,6 +479,9 @@ export const IncidentMap: React.FC<IncidentMapProps> = ({
     }
     if (code === 'WAZE' && agencyFilters.wazeDitRoadsOnly) {
       if (!isDitRoad(inc.address)) return false;
+    }
+    if (code === 'WAZE' && agencyFilters.wazeMotorwaysOnly) {
+      if (!isDitMotorway(inc.address)) return false;
     }
     return true;
   });
