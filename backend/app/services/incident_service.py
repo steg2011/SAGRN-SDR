@@ -24,6 +24,7 @@ class IncidentService:
         'MedStar': {'name': 'MedSTAR', 'color': '#E1BEE7'},  # Light purple
         'TMC': {'name': 'Transport Management Centre', 'color': '#B3E5FC'},  # Light blue
         'WAZE': {'name': 'Waze Traffic', 'color': '#B2EBF2'},  # Light cyan
+        'SAPN': {'name': 'SA Power Networks', 'color': '#FFE0B2'},  # Light amber
         'UNKNOWN': {'name': 'Unknown', 'color': '#E0E0E0'},  # Light gray
     }
 
@@ -275,6 +276,7 @@ class IncidentService:
             .options(selectinload(Incident.agency))
             .options(selectinload(Incident.units))
             .options(selectinload(Incident.messages))
+            .options(selectinload(Incident.power_outage))
             .where(Incident.created_at >= cutoff)
             .order_by(Incident.created_at.desc())
             .offset(offset)
@@ -309,6 +311,7 @@ class IncidentService:
             .options(selectinload(Incident.agency))
             .options(selectinload(Incident.units))
             .options(selectinload(Incident.messages))
+            .options(selectinload(Incident.power_outage))
             .where(
                 or_(
                     Incident.incident_type.ilike(pattern),

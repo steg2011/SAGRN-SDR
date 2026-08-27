@@ -1,4 +1,4 @@
-import { Incident, Agency, Stats, RawMessage, MapIncident } from '../types';
+import { Incident, Agency, Stats, RawMessage, MapIncident, OutageArea } from '../types';
 
 // Dynamically determine API URL based on current host
 const getApiBase = (): string => {
@@ -81,6 +81,10 @@ export async function getMapIncidents(
     url += `&agency=${agency}`;
   }
   return fetchJson<MapIncident[]>(url);
+}
+
+export async function getOutages(): Promise<OutageArea[]> {
+  return fetchJson<OutageArea[]>(`${API_BASE}/outages`);
 }
 
 export async function getFrontendConfig(): Promise<{ mapbox_token: string }> {

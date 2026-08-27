@@ -153,6 +153,10 @@ SAGRN Lightweight/
 ### External Integrations
 - **CFS XML Feed**: `https://data.eso.sa.gov.au/prod/cfs/criimson/` (5-min refresh)
 - **Waze Traffic API**: 2-min refresh with 200m deduplication
+- **SA Power Networks outages**: `https://outage.apps.sapowernetworks.com.au/Outages/GetPublicisedCurrentOutages/`
+  (5-min refresh). Each outage is mirrored into an `Incident` (agency `SAPN`) so it
+  appears in the job list/filter/detail, plus a companion `PowerOutage` row holding
+  the affected-area polygon and outage-specific detail. See `services/sapn_service.py`.
 
 ## Coding Standards
 
@@ -307,6 +311,7 @@ python scripts/migrate_agency.py     # Schema migrations
 | `/api/collector/batch` | POST | Receive batch messages |
 | `/api/incidents` | GET | List incidents (paginated) |
 | `/api/incidents/{id}` | GET | Incident details |
+| `/api/outages` | GET | Active SAPN power outages w/ affected-area polygons (map) |
 | `/api/agencies` | GET | Agency list |
 | `/api/stats` | GET | Dashboard stats |
 | `/api/health` | GET | Health check |
@@ -341,7 +346,7 @@ public backend.
 
 **agencies**
 - `id`, `code` (UNIQUE), `name`, `color` (hex)
-- Services: SAAS, CFS, MFS, SES, MedStar, TMC, WAZE
+- Services: SAAS, CFS, MFS, SES, MedStar, TMC, WAZE, SAPN
 
 **messages**
 - `id`, `raw_message`, `timestamp`, `received_at`
@@ -359,6 +364,13 @@ public backend.
 **incident_units**
 - `id`, `incident_id` (FK), `callsign`, `dispatched_at`, `status`
 - Index: `(incident_id, callsign)`
+
+**power_outages** (SA Power Networks, 1:1 with a SAPN `Incident`)
+- `id`, `job_id` (UNIQUE), `incident_id` (FK), `active`
+- `is_planned`, `reason` (cause), `status_text`, `affected_customers`
+- `primary_suburb`, `suburbs` (JSON), `geometry` (JSON `[[lng,lat],...]`), `centroid_lat/lng`
+- `start_time`, `estimated_restoration` (naive UTC; feed provides Adelaide-local)
+- Accessed via `Incident.power_outage`; exposed on `IncidentResponse.outage`
 
 ### Lookup & Cache Tables
 
@@ -421,6 +433,7 @@ public backend.
 | Message cleanup | Every 60 sec | Delete messages older than 24h |
 | CFS feed update | Every 5 min | Sync incident status from CFS XML |
 | Waze feed update | Every 2 min | Fetch traffic incident markers |
+| SAPN outage update | Every 5 min | Sync SA Power Networks outages (area polygons) |
 | Geocoding process | Continuous | Background lat/lon lookup queue |
 
 ### Real-Time Updates

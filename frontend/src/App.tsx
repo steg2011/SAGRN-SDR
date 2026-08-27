@@ -48,6 +48,7 @@ function App() {
     mfsAlarmLevel: 'all',
     wazeCrashesOnly: false,
     wazeDitRoadsOnly: false,
+    sapnType: 'all',
   });
 
   const isListView = viewMode === 'list' || viewMode === 'compact';
@@ -362,6 +363,13 @@ function App() {
     // Waze DIT (state-maintained) roads only filter
     if (code === 'WAZE' && agencyFilters.wazeDitRoadsOnly) {
       if (!isDitRoad(inc.address)) return false;
+    }
+
+    // SAPN planned/unplanned filter
+    if (code === 'SAPN' && agencyFilters.sapnType !== 'all') {
+      const isPlanned = inc.outage?.is_planned ?? false;
+      if (agencyFilters.sapnType === 'planned' && !isPlanned) return false;
+      if (agencyFilters.sapnType === 'unplanned' && isPlanned) return false;
     }
 
     return true;

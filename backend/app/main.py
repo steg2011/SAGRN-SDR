@@ -14,6 +14,7 @@ from app.api.routes import router
 from app.services.incident_service import IncidentService
 from app.services.cfs_integration import CFSIntegrationService
 from app.services.waze_service import get_waze_service
+from app.services.sapn_service import get_sapn_service
 from app.services.event_manager import get_event_manager
 from app.core.config import get_settings
 
@@ -24,6 +25,7 @@ scheduler = AsyncIOScheduler()
 incident_service = IncidentService()
 cfs_service = CFSIntegrationService()
 waze_service = get_waze_service()
+sapn_service = get_sapn_service()
 
 
 async def startup_tasks():
@@ -62,6 +64,14 @@ async def fetch_waze_incidents():
         await waze_service.cleanup_old_alerts(db)
 
 
+async def fetch_power_outages():
+    """Scheduled task to fetch SA Power Networks outages (every 5 minutes)"""
+    async with async_session() as db:
+        new_count = await sapn_service.process_outages(db)
+        if new_count > 0:
+            print(f"SAPN: {new_count} new power outages")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler"""
@@ -72,6 +82,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(cleanup_old_data, 'interval', hours=1)  # More frequent cleanup for 24hr retention
     scheduler.add_job(fetch_cfs_incidents, 'interval', minutes=5)
     scheduler.add_job(fetch_waze_incidents, 'interval', minutes=2)  # Waze updates every 2 minutes
+    scheduler.add_job(fetch_power_outages, 'interval', minutes=5)  # SAPN outages every 5 minutes
     scheduler.start()
 
     # Run initial Waze fetch. Never let a bad feed or a transient DB error block
@@ -80,6 +91,12 @@ async def lifespan(app: FastAPI):
         await fetch_waze_incidents()
     except Exception as e:
         print(f"Initial Waze fetch failed, continuing startup: {e}")
+
+    # Run initial SAPN outage fetch (best-effort; scheduler retries every 5 minutes).
+    try:
+        await fetch_power_outages()
+    except Exception as e:
+        print(f"Initial SAPN fetch failed, continuing startup: {e}")
 
     print("SAGRN SDR Monitor started (Lightweight GCP Edition)")
 

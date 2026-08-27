@@ -9,7 +9,7 @@
     "typescript": "^4.9.5",
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
-    "mapbox-gl": "^3.9.4"
+    "mapbox-gl": "3.26.0"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -19,7 +19,10 @@
     "production": [
       ">0.2%",
       "not dead",
-      "not op_mini all"
+      "not op_mini all",
+      "not and_uc > 0",
+      "not ios_saf < 12",
+      "not safari < 12"
     ],
     "development": [
       "last 1 chrome version",

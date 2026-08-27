@@ -12,6 +12,39 @@ export interface IncidentMessage {
   message_type: string | null;
 }
 
+export interface OutageSuburb {
+  name: string | null;
+  postcode: string | null;
+}
+
+export interface OutageDetail {
+  job_id: string;
+  is_planned: boolean;
+  reason: string | null;
+  status_text: string | null;
+  affected_customers: number | null;
+  primary_suburb: string | null;
+  suburbs: OutageSuburb[];
+  start_time: string | null;
+  estimated_restoration: string | null;
+  active: boolean;
+}
+
+// A SA Power Networks outage with its affected-area polygon, for the map.
+export interface OutageArea {
+  job_id: string;
+  incident_id: number | null;
+  is_planned: boolean;
+  reason: string | null;
+  status_text: string | null;
+  affected_customers: number | null;
+  primary_suburb: string | null;
+  estimated_restoration: string | null;
+  centroid_lat: number | null;
+  centroid_lng: number | null;
+  geometry: [number, number][]; // [lng, lat] pairs
+}
+
 export interface Incident {
   id: number;
   unique_id: string;
@@ -37,6 +70,7 @@ export interface Incident {
   messages: IncidentMessage[];
   created_at: string;
   updated_at: string;
+  outage: OutageDetail | null;
 }
 
 export interface MapIncident {
@@ -80,4 +114,5 @@ export interface AgencyFilters {
   mfsAlarmLevel: 'all' | 1 | 2 | 3 | 4;
   wazeCrashesOnly: boolean;
   wazeDitRoadsOnly: boolean;
+  sapnType: 'all' | 'planned' | 'unplanned';
 }

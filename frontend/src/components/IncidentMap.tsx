@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { MapIncident, AgencyFilters } from '../types';
-import { getMapIncidents } from '../services/api';
+import { MapIncident, AgencyFilters, OutageArea } from '../types';
+import { getMapIncidents, getOutages } from '../services/api';
 import { isDitRoad } from '../data/ditRoads';
 
 interface IncidentMapProps {
@@ -23,13 +23,33 @@ const AGENCY_COLORS: Record<string, string> = {
   TMC: '#2196F3',
   WAZE: '#00BCD4',
   MedStar: '#9C27B0',
+  SAPN: '#FF9800',
 };
+
+// Affected-area polygon colours for power outages
+const OUTAGE_UNPLANNED_COLOR = '#F44336'; // red - unplanned
+const OUTAGE_PLANNED_COLOR = '#FF9800';   // amber - planned works
 
 const formatTime = (dateStr: string): string => {
   try {
     const date = new Date(dateStr);
     return date.toLocaleTimeString('en-AU', {
       timeZone: 'Australia/Adelaide',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '';
+  }
+};
+
+// Short day + time label for outage restoration estimates (stored as UTC)
+const formatDateTime = (dateStr: string): string => {
+  try {
+    const date = new Date(dateStr.endsWith('Z') ? dateStr : dateStr + 'Z');
+    return date.toLocaleString('en-AU', {
+      timeZone: 'Australia/Adelaide',
+      weekday: 'short',
       hour: '2-digit',
       minute: '2-digit',
     });
@@ -62,6 +82,7 @@ export const IncidentMap: React.FC<IncidentMapProps> = ({
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [incidents, setIncidents] = useState<MapIncident[]>([]);
+  const [outages, setOutages] = useState<OutageArea[]>([]);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const animFrameRef = useRef<number>(0);
@@ -214,6 +235,97 @@ export const IncidentMap: React.FC<IncidentMapProps> = ({
         },
       });
 
+      // ── Power outages: affected-area polygons ────────────────────────
+      // Added beneath the incident points (beforeId) so markers stay on top.
+      // Wrapped defensively: a layer/expression error must never break the base map.
+      try {
+        mapInstance.addSource('outages', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+
+        // ['boolean', ...] coerces the property to a boolean so `case` accepts it.
+        const outageColor: any = [
+          'case',
+          ['boolean', ['get', 'is_planned'], false],
+          OUTAGE_PLANNED_COLOR,
+          OUTAGE_UNPLANNED_COLOR,
+        ];
+
+        mapInstance.addLayer({
+          id: 'outage-fill',
+          type: 'fill',
+          source: 'outages',
+          paint: {
+            'fill-color': outageColor,
+            'fill-opacity': 0.22,
+          },
+        }, 'cluster-halo');
+
+        mapInstance.addLayer({
+          id: 'outage-outline',
+          type: 'line',
+          source: 'outages',
+          paint: {
+            'line-color': outageColor,
+            'line-width': 2,
+            'line-opacity': 0.85,
+          },
+        }, 'cluster-halo');
+      } catch (err) {
+        console.error('Failed to set up power-outage layers:', err);
+      }
+
+      // Outage hover → popup with the key details
+      mapInstance.on('mouseenter', 'outage-fill', (e: any) => {
+        const feature = e.features?.[0];
+        if (!feature) return;
+        const props = feature.properties as any;
+        const color = props.is_planned === 'true' || props.is_planned === true
+          ? OUTAGE_PLANNED_COLOR : OUTAGE_UNPLANNED_COLOR;
+        const customers = props.affected_customers != null && props.affected_customers !== ''
+          ? `${props.affected_customers} customer${Number(props.affected_customers) === 1 ? '' : 's'}` : '';
+        const restore = props.restore_label ? `Est. restore ${props.restore_label}` : '';
+
+        popupRef.current?.remove();
+        const popup = new mapboxgl.Popup({
+          offset: 8,
+          closeButton: false,
+          closeOnClick: false,
+          className: 'map-incident-popup',
+          maxWidth: '280px',
+        }).setHTML(`
+          <div class="map-popup-card">
+            <div class="map-popup-accent" style="background:${color}"></div>
+            <div class="map-popup-body">
+              <div class="map-popup-agency" style="color:${color}">POWER OUTAGE${props.is_planned === 'true' || props.is_planned === true ? ' · PLANNED' : ''}</div>
+              <div class="map-popup-type">${props.reason || 'Power outage'}</div>
+              <div class="map-popup-location">${props.primary_suburb || 'Unknown area'}${customers ? ' · ' + customers : ''}</div>
+              <div class="map-popup-footer">
+                <span class="map-popup-time">${restore}</span>
+              </div>
+            </div>
+          </div>
+        `).setLngLat(e.lngLat).addTo(mapInstance);
+
+        popupRef.current = popup;
+        mapInstance.getCanvas().style.cursor = 'pointer';
+      });
+
+      mapInstance.on('mouseleave', 'outage-fill', () => {
+        popupRef.current?.remove();
+        popupRef.current = null;
+        mapInstance.getCanvas().style.cursor = '';
+      });
+
+      // Outage click → open the incident detail modal
+      mapInstance.on('click', 'outage-fill', (e: any) => {
+        const feature = e.features?.[0];
+        if (!feature) return;
+        const incidentId = feature.properties?.incident_id;
+        if (incidentId != null && incidentId !== '') onIncidentClickRef.current(Number(incidentId));
+      });
+
       setMapLoaded(true);
 
       // ── Cluster click → zoom in ──────────────────────────────────────
@@ -341,6 +453,12 @@ export const IncidentMap: React.FC<IncidentMapProps> = ({
     } catch (err) {
       console.error('Failed to fetch map incidents:', err);
     }
+    try {
+      const outageData = await getOutages();
+      setOutages(outageData);
+    } catch (err) {
+      console.error('Failed to fetch power outages:', err);
+    }
   }, []);
 
   useEffect(() => { fetchMapData(); }, [fetchMapData, refreshTrigger]);
@@ -397,6 +515,47 @@ export const IncidentMap: React.FC<IncidentMapProps> = ({
         })),
     });
   }, [filteredIncidents, mapLoaded]);
+
+  // Apply the SAPN filter to outages (agency toggle + planned/unplanned)
+  const filteredOutages = outages.filter((o) => {
+    if (agencyFilters.enabled['SAPN'] === false) return false;
+    if (agencyFilters.sapnType === 'planned' && !o.is_planned) return false;
+    if (agencyFilters.sapnType === 'unplanned' && o.is_planned) return false;
+    return true;
+  });
+
+  // Push filtered outage polygons to the outages GeoJSON source
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    const source = map.current.getSource('outages') as mapboxgl.GeoJSONSource | undefined;
+    if (!source) return;
+
+    try {
+      source.setData({
+        type: 'FeatureCollection',
+        features: filteredOutages
+          .filter(o => o.geometry && o.geometry.length >= 3)
+          .map(o => ({
+            type: 'Feature' as const,
+            geometry: {
+              type: 'Polygon' as const,
+              coordinates: [o.geometry],
+            },
+            properties: {
+              job_id: o.job_id,
+              incident_id: o.incident_id,
+              is_planned: o.is_planned,
+              reason: o.reason,
+              primary_suburb: o.primary_suburb,
+              affected_customers: o.affected_customers,
+              restore_label: o.estimated_restoration ? formatDateTime(o.estimated_restoration) : '',
+            },
+          })),
+      });
+    } catch (err) {
+      console.error('Failed to render power-outage polygons:', err);
+    }
+  }, [filteredOutages, mapLoaded]);
 
   if (!mapboxToken) {
     return (

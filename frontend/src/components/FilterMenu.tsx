@@ -230,6 +230,37 @@ export const FilterMenu: React.FC<FilterMenuProps> = ({
             )}
           </div>
 
+          {/* SAPN - SA Power Networks outages */}
+          <div className="filter-agency-section">
+            <div className="filter-agency-row">
+              <button
+                className={`filter-agency-toggle ${isEnabled('SAPN') ? 'on' : 'off'}`}
+                style={{ borderColor: isEnabled('SAPN') ? agencyColor('SAPN') : '#555' }}
+                onClick={() => toggleAgency('SAPN')}
+              >
+                <span className="toggle-indicator">{isEnabled('SAPN') ? 'ON' : 'OFF'}</span>
+                <span className="toggle-label">SAPN</span>
+                <span className="toggle-name">Power Outages</span>
+              </button>
+            </div>
+            {isEnabled('SAPN') && (
+              <div className="filter-sub-options">
+                <span className="filter-sub-label">Type</span>
+                <div className="filter-btn-group">
+                  {(['all', 'unplanned', 'planned'] as const).map((val) => (
+                    <button
+                      key={val}
+                      className={`filter-option-btn ${filters.sapnType === val ? 'selected' : ''}`}
+                      onClick={() => onFiltersChange({ ...filters, sapnType: val })}
+                    >
+                      {val === 'all' ? 'All' : val === 'unplanned' ? 'Unplanned' : 'Planned'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
     </>

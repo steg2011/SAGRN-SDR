@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     cfs_incidents_xml: str = "https://data.eso.sa.gov.au/prod/cfs/criimson/cfs_current_incidents.xml"
     cfs_cap_xml: str = "https://data.eso.sa.gov.au/prod/cfs/criimson/cfs_cap_incidents.xml"
 
+    # SA Power Networks public outages feed (polled every 5 minutes)
+    sapn_base_url: str = "https://outage.apps.sapowernetworks.com.au"
+
     # Mapbox token (served to frontend via /api/config)
     mapbox_token: str = ""
 

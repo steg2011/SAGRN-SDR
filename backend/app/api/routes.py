@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+import json
+
 from app.models.database import get_db
-from app.models.models import Message, Incident, Agency, IncidentUnit
+from app.models.models import Message, Incident, Agency, IncidentUnit, PowerOutage
 from app.services.parser import MessageParser, ParsedMessage
 from app.services.incident_service import IncidentService
 from app.services.message_combiner import get_message_combiner
@@ -80,9 +82,50 @@ class IncidentResponse(BaseModel):
     messages: List[IncidentMessageResponse] = []
     created_at: datetime
     updated_at: datetime
+    # Power outage detail (SAPN incidents only; None for everything else)
+    outage: Optional["OutageDetail"] = None
 
     class Config:
         from_attributes = True
+
+
+class OutageSuburb(BaseModel):
+    name: Optional[str] = None
+    postcode: Optional[str] = None
+
+
+class OutageDetail(BaseModel):
+    """SA Power Networks outage detail attached to a SAPN incident."""
+    job_id: str
+    is_planned: bool
+    reason: Optional[str]
+    status_text: Optional[str]
+    affected_customers: Optional[int]
+    primary_suburb: Optional[str]
+    suburbs: List[OutageSuburb] = []
+    start_time: Optional[datetime]
+    estimated_restoration: Optional[datetime]
+    active: bool
+
+
+def _outage_detail(po: PowerOutage) -> OutageDetail:
+    """Convert a PowerOutage ORM object to an OutageDetail (without heavy geometry)."""
+    try:
+        suburbs = json.loads(po.suburbs) if po.suburbs else []
+    except (ValueError, TypeError):
+        suburbs = []
+    return OutageDetail(
+        job_id=po.job_id,
+        is_planned=bool(po.is_planned),
+        reason=po.reason,
+        status_text=po.status_text,
+        affected_customers=po.affected_customers,
+        primary_suburb=po.primary_suburb,
+        suburbs=[OutageSuburb(name=s.get("name"), postcode=s.get("postcode")) for s in suburbs],
+        start_time=po.start_time,
+        estimated_restoration=po.estimated_restoration,
+        active=bool(po.active),
+    )
 
 
 class MapIncidentResponse(BaseModel):
@@ -246,6 +289,9 @@ async def receive_batch(
     }
 
 
+IncidentResponse.model_rebuild()  # resolve the forward reference to OutageDetail
+
+
 def _incident_to_response(inc: Incident) -> IncidentResponse:
     """Convert an Incident ORM object to an IncidentResponse"""
     priority = None
@@ -289,7 +335,8 @@ def _incident_to_response(inc: Incident) -> IncidentResponse:
             message_type=m.message_type
         ) for m in inc.messages],
         created_at=inc.created_at,
-        updated_at=inc.updated_at
+        updated_at=inc.updated_at,
+        outage=_outage_detail(inc.power_outage) if inc.power_outage else None,
     )
 
 
@@ -341,6 +388,8 @@ async def get_map_incidents(
             Incident.latitude.isnot(None),
             Incident.longitude.isnot(None),
             Incident.status != 'closed',
+            # SAPN outages render as affected-area polygons via /api/outages, not points
+            ~Incident.agency.has(Agency.code == 'SAPN'),
         )
         .order_by(Incident.created_at.desc())
         .limit(500)
@@ -369,6 +418,51 @@ async def get_map_incidents(
     ) for inc in incidents]
 
 
+class OutageAreaResponse(BaseModel):
+    """Power outage with its affected-area polygon, for map rendering."""
+    job_id: str
+    incident_id: Optional[int]
+    is_planned: bool
+    reason: Optional[str]
+    status_text: Optional[str]
+    affected_customers: Optional[int]
+    primary_suburb: Optional[str]
+    estimated_restoration: Optional[datetime]
+    centroid_lat: Optional[float]
+    centroid_lng: Optional[float]
+    geometry: List[List[float]]  # [[lng, lat], ...]
+
+
+@router.get("/outages", response_model=List[OutageAreaResponse])
+async def get_outages(db: AsyncSession = Depends(get_db)):
+    """Get active SA Power Networks outages with affected-area polygons (for the map)."""
+    result = await db.execute(
+        select(PowerOutage).where(PowerOutage.active == True)  # noqa: E712
+    )
+    outages = result.scalars().all()
+
+    responses = []
+    for po in outages:
+        try:
+            geometry = json.loads(po.geometry) if po.geometry else []
+        except (ValueError, TypeError):
+            geometry = []
+        responses.append(OutageAreaResponse(
+            job_id=po.job_id,
+            incident_id=po.incident_id,
+            is_planned=bool(po.is_planned),
+            reason=po.reason,
+            status_text=po.status_text,
+            affected_customers=po.affected_customers,
+            primary_suburb=po.primary_suburb,
+            estimated_restoration=po.estimated_restoration,
+            centroid_lat=po.centroid_lat,
+            centroid_lng=po.centroid_lng,
+            geometry=geometry,
+        ))
+    return responses
+
+
 @router.get("/incidents/{incident_id}", response_model=IncidentResponse)
 async def get_incident(
     incident_id: int,
@@ -380,6 +474,7 @@ async def get_incident(
         .options(selectinload(Incident.agency))
         .options(selectinload(Incident.units))
         .options(selectinload(Incident.messages))
+        .options(selectinload(Incident.power_outage))
         .where(Incident.id == incident_id)
     )
     incident = result.scalar_one_or_none()

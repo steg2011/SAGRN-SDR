@@ -30,6 +30,8 @@ function formatDateTime(dateString: string): string {
 }
 
 export const IncidentDetail: React.FC<IncidentDetailProps> = ({ incident, onClose }) => {
+  const outage = incident.outage;
+  const isOutage = incident.agency_code === 'SAPN';
   const googleMapsUrl = incident.latitude && incident.longitude
     ? `https://www.google.com/maps/search/?api=1&query=${incident.latitude},${incident.longitude}`
     : incident.address
@@ -47,6 +49,57 @@ export const IncidentDetail: React.FC<IncidentDetailProps> = ({ incident, onClos
         </div>
 
         <div className="modal-body">
+          {outage && (
+            <div className="detail-section">
+              <h3>Power Outage</h3>
+              <div className="detail-row">
+                <span className="label">Cause:</span>
+                <span className="value">{outage.reason || 'Unknown'}</span>
+              </div>
+              <div className="detail-row">
+                <span className="label">Status:</span>
+                <span className="value">
+                  {outage.status_text || (outage.active ? 'In progress' : 'Restored')}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span className="label">Type:</span>
+                <span className="value">{outage.is_planned ? 'Planned' : 'Unplanned'}</span>
+              </div>
+              {outage.affected_customers != null && (
+                <div className="detail-row">
+                  <span className="label">Affected Customers:</span>
+                  <span className="value">{outage.affected_customers.toLocaleString('en-AU')}</span>
+                </div>
+              )}
+              {outage.start_time && (
+                <div className="detail-row">
+                  <span className="label">Started:</span>
+                  <span className="value">{formatDateTime(outage.start_time)}</span>
+                </div>
+              )}
+              <div className="detail-row">
+                <span className="label">Est. Restoration:</span>
+                <span className="value">
+                  {outage.estimated_restoration ? formatDateTime(outage.estimated_restoration) : 'Unknown'}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span className="label">Job ID:</span>
+                <span className="value">{outage.job_id}</span>
+              </div>
+              {outage.suburbs.length > 0 && (
+                <div className="detail-row">
+                  <span className="label">Suburbs:</span>
+                  <span className="value">
+                    {outage.suburbs.map(s => s.name).filter(Boolean).join(', ')}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!isOutage && (
           <div className="detail-section">
             <h3>Incident Details</h3>
             <div className="detail-row">
@@ -72,6 +125,7 @@ export const IncidentDetail: React.FC<IncidentDetailProps> = ({ incident, onClos
               <span className="value">{formatDateTime(incident.created_at)}</span>
             </div>
           </div>
+          )}
 
           <div className="detail-section">
             <h3>Location</h3>
@@ -126,6 +180,7 @@ export const IncidentDetail: React.FC<IncidentDetailProps> = ({ incident, onClos
             </div>
           )}
 
+          {!isOutage && (
           <div className="detail-section">
             <h3>Units Assigned ({incident.units.length})</h3>
             <div className="units-list">
@@ -140,6 +195,7 @@ export const IncidentDetail: React.FC<IncidentDetailProps> = ({ incident, onClos
               )}
             </div>
           </div>
+          )}
 
           {incident.messages && incident.messages.length > 0 && (
             <div className="detail-section">

@@ -131,10 +131,51 @@ class Incident(Base):
     agency = relationship("Agency", back_populates="incidents")
     messages = relationship("Message", back_populates="incident", order_by="Message.timestamp")
     units = relationship("IncidentUnit", back_populates="incident")
+    power_outage = relationship(
+        "PowerOutage", back_populates="incident", uselist=False, cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index('ix_incidents_date_agency', 'incident_date', 'agency_id'),
     )
+
+
+class PowerOutage(Base):
+    """
+    SA Power Networks power outages (polled from the public outages feed).
+
+    Each outage is mirrored into an Incident (agency SAPN) so it flows through the
+    normal list/map/detail plumbing; this table holds the outage-specific detail
+    (restoration time, affected customers, planned/unplanned, and the polygon of
+    the affected area) that doesn't fit the generic Incident model.
+    """
+    __tablename__ = "power_outages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(String(20), unique=True, nullable=False, index=True)  # SAPN jobID
+    incident_id = Column(Integer, ForeignKey("incidents.id"), index=True)
+
+    is_planned = Column(Boolean, default=False)  # SAPN "isPaw" (planned area work)
+    reason = Column(String(200))                 # the Cause, e.g. "Vehicle incident"
+    status_text = Column(String(120))            # SAPN "status", e.g. "Work is in progress"
+    affected_customers = Column(Integer)
+
+    primary_suburb = Column(String(100))
+    suburbs = Column(Text)   # JSON: [{"name": ..., "postcode": ...}, ...]
+    geometry = Column(Text)  # JSON: [[lng, lat], ...] affected-area polygon
+
+    centroid_lat = Column(Float)
+    centroid_lng = Column(Float)
+
+    # Times stored as naive UTC (feed provides naive Adelaide-local timestamps)
+    start_time = Column(DateTime)
+    estimated_restoration = Column(DateTime)
+
+    active = Column(Boolean, default=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    incident = relationship("Incident", back_populates="power_outage")
 
 
 class IncidentUnit(Base):
