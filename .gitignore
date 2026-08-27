@@ -43,3 +43,5 @@ pager_log.txt
 .env.bak*
 .env.predeploy*
 .ruff_cache/
+data/*.lock
+data/auto_deploy.log
