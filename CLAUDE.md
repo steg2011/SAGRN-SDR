@@ -52,7 +52,7 @@ SAGRN Lightweight/
 │
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml          # CI/CD: lint, test, SSH deploy to NUC
+│       └── ci.yml             # CI gate: ruff, pytest, tsc (no deploy - see below)
 │
 ├── backend/                    # Python FastAPI async backend
 │   ├── app/
@@ -108,6 +108,7 @@ SAGRN Lightweight/
 │   └── public/index.html
 │
 ├── scripts/                    # Deployment & database utilities
+│   ├── auto_deploy.sh          # Pull-based deploy, run from cron every 5 min
 │   ├── host_prepare.sh         # Intel NUC Docker host setup (users, udev, drivers)
 │   ├── collector.py            # RTL-SDR to HTTP collector script
 │   ├── install_gcp_debian.sh   # GCP Debian VM setup script (legacy)
@@ -302,8 +303,43 @@ npm start                            # Start dev server :3000
 npm run build                        # Production build
 ```
 
-### Production Deployment
+### Production Deployment (NUC)
 
+**Deployment is pull-based.** GitHub Actions cannot reach the NUC - its only
+public ingress is the Cloudflare Tunnel, which carries HTTP rather than SSH - so
+the NUC polls for new commits and deploys itself.
+
+```
+push to main -> GitHub Actions (ci.yml: ruff, pytest, tsc)
+             -> NUC cron, every 5 min: scripts/auto_deploy.sh
+             -> deploys only if lint-and-test passed for that commit
+```
+
+`scripts/auto_deploy.sh` (cron as the repo owner, log at `data/auto_deploy.log`):
+- deploys only a commit whose `lint-and-test` job concluded success; holds and
+  retries if CI is still running or the API is unreachable
+- refuses to run over a dirty working tree, and fast-forwards only
+- recreates **backend + admin** only. The collector is included just when
+  `collector.Dockerfile` or `scripts/collector.py` changed, so a frontend or
+  backend release never interrupts pager capture
+- rolls back to the previous commit if compose fails or `/api/health` does not
+  answer afterwards; `flock` prevents overlapping runs
+
+`.env` lives only on the NUC and is never rewritten by a deploy. `MAPBOX_TOKEN`,
+`ADMIN_PASSWORD` and `ADMIN_SECRET_KEY` exist nowhere else - do not add a step
+that regenerates `.env` from GitHub secrets, which is what the old SSH deploy job
+did and would have taken out the map view and the admin login.
+
+`ruff.toml` pins the lint rule set explicitly and `ci.yml` pins `ruff==0.16.4`,
+because ruff's built-in defaults widened between 0.15 and 0.16 and silently
+turned the gate red on unchanged code.
+
+Manual deploy, if ever needed:
+```bash
+docker compose build backend && docker compose up -d backend admin
+```
+
+Legacy setups (still supported via scripts):
 ```bash
 # GCP Debian VM
 ./scripts/install_gcp_debian.sh      # Fresh install
