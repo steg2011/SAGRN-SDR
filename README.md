@@ -98,7 +98,15 @@ npm start
 
 ## Deployment Options
 
-### Option 1: GCP with Docker Compose (Recommended)
+> **Production runs on an on-prem Intel NUC** via Docker Compose, behind a
+> Cloudflare Tunnel. Deployment there is pull-based: push to `main`, CI runs
+> (`.github/workflows/ci.yml`), and the NUC's `scripts/auto_deploy.sh` cron job
+> picks up the commit within 5 minutes once CI is green. GitHub Actions cannot
+> SSH into the NUC, so nothing is pushed to it. See CLAUDE.md for detail.
+>
+> The GCP and Raspberry Pi options below are legacy but still supported.
+
+### Option 1: GCP with Docker Compose (legacy)
 
 For production on Google Cloud Platform free tier (e2-micro):
 
