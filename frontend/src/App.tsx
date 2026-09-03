@@ -14,11 +14,20 @@ import './App.css';
 
 type ViewMode = 'list' | 'compact' | 'map' | 'raw';
 
-const VIEW_MODE_STORAGE_KEY = 'sagrn_list_style';
+// Opening or refreshing the page always lands on TILES with the default filters
+// below, rather than restoring whatever was last selected.
+const DEFAULT_VIEW_MODE: ViewMode = 'list';
 
-function initialViewMode(): ViewMode {
-  return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === 'compact' ? 'compact' : 'list';
-}
+const DEFAULT_FILTERS: AgencyFilters = {
+  enabled: { SAAS: false },   // SAAS hidden by default; every other agency on
+  saasPriority: 'all',
+  cfsAlarmLevel: 'all',
+  mfsAlarmLevel: 'all',
+  wazeCrashesOnly: false,
+  wazeDitRoadsOnly: false,
+  wazeMotorwaysOnly: true,    // Waze limited to DIT motorways by default
+  sapnType: 'all',
+};
 
 const FALLBACK_REFRESH_INTERVAL = 30000; // 30 seconds fallback polling (SSE is primary)
 const NEW_INCIDENT_DURATION = 30000; // How long to show "new" highlight (30 seconds)
@@ -34,7 +43,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [newIncidentIds, setNewIncidentIds] = useState<Set<number>>(new Set());
-  const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode);
+  const [viewMode, setViewMode] = useState<ViewMode>(DEFAULT_VIEW_MODE);
   const [rawMessages, setRawMessages] = useState<RawMessage[]>([]);
   const [mapboxToken, setMapboxToken] = useState<string>('');
   const [mapRefreshTrigger, setMapRefreshTrigger] = useState(0);
@@ -42,25 +51,9 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [pollerOffline, setPollerOffline] = useState(false);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
-  const [agencyFilters, setAgencyFilters] = useState<AgencyFilters>({
-    enabled: {},
-    saasPriority: 'all',
-    cfsAlarmLevel: 'all',
-    mfsAlarmLevel: 'all',
-    wazeCrashesOnly: false,
-    wazeDitRoadsOnly: false,
-    wazeMotorwaysOnly: false,
-    sapnType: 'all',
-  });
+  const [agencyFilters, setAgencyFilters] = useState<AgencyFilters>(DEFAULT_FILTERS);
 
   const isListView = viewMode === 'list' || viewMode === 'compact';
-
-  // Remember preferred list style across sessions
-  useEffect(() => {
-    if (isListView) {
-      localStorage.setItem(VIEW_MODE_STORAGE_KEY, viewMode);
-    }
-  }, [viewMode, isListView]);
 
   // Track which incidents we've seen (persists across renders)
   const seenIncidentIds = useRef<Set<number>>(new Set());

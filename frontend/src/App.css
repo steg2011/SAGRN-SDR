@@ -562,6 +562,14 @@ body {
   margin-bottom: 6px;
 }
 
+/* SAPN outages: estimated time to restoration, on the tile */
+.incident-etr {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 6px;
+}
+
 .incident-footer {
   display: flex;
   justify-content: space-between;
@@ -711,6 +719,16 @@ body {
 .incident-row .unit-badge.unit-medstar {
   background: #d32f2f;
   color: #fff;
+}
+
+/* SAPN outages: estimated time to restoration, on the compact row */
+.row-etr {
+  flex-shrink: 0;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #ffb74d;
+  white-space: nowrap;
 }
 
 .row-map-ref {
@@ -1163,6 +1181,10 @@ body {
   .row-units {
     order: 2;
     flex-wrap: wrap;
+  }
+
+  .row-etr {
+    order: 3;
   }
 
   .row-map-ref {

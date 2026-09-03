@@ -78,6 +78,12 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({ incident, isNew, onC
         {!incident.address && !incident.suburb && <div>Location unavailable</div>}
       </div>
 
+      {incident.outage?.estimated_restoration && (
+        <div className="incident-etr" title="Estimated time to restoration">
+          ETR {formatAdelaideDateTime(incident.outage.estimated_restoration)}
+        </div>
+      )}
+
       <div className="incident-footer">
         <div className="incident-units">
           {incident.units

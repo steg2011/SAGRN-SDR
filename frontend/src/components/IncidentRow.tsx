@@ -41,6 +41,30 @@ function formatAdelaideDate(dateString: string): string | null {
   });
 }
 
+function formatAdelaideShortDateTime(dateString: string): string {
+  const date = parseAsUTC(dateString);
+  const todayAdelaide = new Date().toLocaleDateString('en-AU', { timeZone: 'Australia/Adelaide' });
+  const dateAdelaide = date.toLocaleDateString('en-AU', { timeZone: 'Australia/Adelaide' });
+
+  if (dateAdelaide === todayAdelaide) {
+    return date.toLocaleTimeString('en-AU', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Australia/Adelaide'
+    });
+  }
+
+  return date.toLocaleString('en-AU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Australia/Adelaide'
+  });
+}
+
 function isMedstarUnit(callsign: string): boolean {
   return /^MS\d+$/i.test(callsign);
 }
@@ -86,6 +110,12 @@ export const IncidentRow: React.FC<IncidentRowProps> = ({ incident, isNew, onCli
         <span className="row-type">{incident.incident_type || 'Unknown Incident'}</span>
         {location && <span className="row-location">{location}</span>}
       </span>
+
+      {incident.outage?.estimated_restoration && (
+        <span className="row-etr" title="Estimated time to restoration">
+          ETR {formatAdelaideShortDateTime(incident.outage.estimated_restoration)}
+        </span>
+      )}
 
       <span className="row-units">
         {medstarUnits.map((unit, i) => (

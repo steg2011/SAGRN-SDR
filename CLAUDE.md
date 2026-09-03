@@ -171,6 +171,12 @@ All agency filters are applied client-side, in two places that must stay in sync
 (`filteredIncidents`) for the map. Adding a filter means touching `AgencyFilters` in
 `types/index.ts`, both filter blocks, and `FilterMenu.tsx`.
 
+Filters are not persisted: every page load (and refresh) starts from
+`DEFAULT_FILTERS` in `App.tsx` - SAAS off, WAZE restricted to Motorways, everything
+else unrestricted - and the view starts on TILES (`DEFAULT_VIEW_MODE`). The list
+style used to be remembered in `localStorage` under `sagrn_list_style`; that was
+dropped so a refresh always returns to the default screen.
+
 The WAZE section carries three sub-filters:
 - **Crashes Only** - `incident_type` contains "accident"; independent of the other two
 - **DIT Roads** - `isDitRoad()`, the full state-maintained road list
